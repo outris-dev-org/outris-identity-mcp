@@ -181,8 +181,28 @@ async def authorize_user(
     auth_header = req.headers.get("Authorization", "")
     user = await get_current_user(auth_header)
     
-    # 2. Validate Request
-    if request.response_type != "code":
+    # 2. Validate Client & Redirect URI (Strict Security Check)
+    # Fetch client details to verify existence and authorized redirect URIs
+    client_row = await Database.fetchrow(
+        "SELECT redirect_uris FROM mcp.oauth_clients WHERE client_id = $1",
+        request.client_id
+    )
+    
+    if not client_row:
+        logger.warning(f"OAuth authorization attempt with invalid client_id: {request.client_id}")
+        raise HTTPException(status_code=400, detail="Invalid client_id")
+        
+    # Verify redirect_uri is in the whitelist
+    try:
+        allowed_redirects = json.loads(client_row["redirect_uris"])
+    except Exception:
+        allowed_redirects = []
+        
+    if request.redirect_uri not in allowed_redirects:
+        logger.warning(f"OAuth Open Redirect attempt: client={request.client_id}, requested={request.redirect_uri}")
+        raise HTTPException(status_code=400, detail="Invalid redirect_uri for this client")
+
+    # 3. Validate Request (Response Type)    if request.response_type != "code":
         raise HTTPException(status_code=400, detail="Unsupported response_type")
     
     # 3. Generate Code

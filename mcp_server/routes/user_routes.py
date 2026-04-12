@@ -373,7 +373,7 @@ async def enable_mcp(request: Request):
     )
     
     logger.info(f"MCP enabled for {email} (account_id={row['id']})")
-    
+
     return MCPEnableResponse(
         success=True,
         message="MCP enabled successfully! Store your API key securely - it won't be shown again.",
