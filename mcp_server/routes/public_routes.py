@@ -209,6 +209,16 @@ async def try_tool_anonymous(
         return TryToolResponse(success=False, error=str(e), remaining_tries=remaining)
 
 
+@router.get("/remaining-tries")
+async def get_remaining_tries(request: Request):
+    """Anonymous tries-left counter for the playground (read-only, no increment)."""
+    client_ip = request.client.host if request.client else "unknown"
+    if request.headers.get("X-Forwarded-For"):
+        client_ip = request.headers.get("X-Forwarded-For").split(",")[0].strip()
+    _, remaining = _check_rate_limit(_get_ip_hash(client_ip))
+    return {"remaining_tries": remaining, "daily_limit": DAILY_LIMIT}
+
+
 # ============================================================================
 # Demo Platform Check
 # ============================================================================
