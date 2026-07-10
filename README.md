@@ -71,16 +71,21 @@ See [SETUP.md](SETUP.md) for detailed configuration instructions.
 
 ## Available Tools
 
+A small, curated set of **intent tools** — one per common identity/KYC journey —
+instead of a flat list of ~100 endpoints. See [TOOLS.md](TOOLS.md) for details.
+
 | Tool | Credits | Use Case |
 |------|---------|----------|
-| **get_identity_profile** | 3 | Complete profile: names, emails, addresses, documents |
-| **get_name** | 2 | Names linked to phone |
-| **get_email** | 2 | Emails linked to phone |
-| **get_address** | 2 | Addresses (ecommerce, banking, etc.) |
-| **get_alternate_phones** | 2 | Other phones for same person |
-| **check_online_platforms** | 1 | Social media/app registrations |
-| **check_digital_commerce_activity** | 1 | Ecommerce/quick-commerce activity |
-| **check_breaches** | 1 | Data breach detection |
+| **investigate_phone** | 3 | Who is behind a mobile — names, addresses, alt-phones, footprint (`depth` basic/full) |
+| **assess_fraud_risk** | 3 | Composite fraud-risk profile for a phone |
+| **find_contacts** | 3 | Skip-trace alt phones + geocoded addresses (consent) |
+| **due_diligence_person** | 5 | Background check — PEP/sanctions/enforcement/adverse media (consent, premium) |
+| **investigate_email** | 2 | Trace the person behind an email |
+| **resolve_company** | 3 | Company name → CIN + GSTIN/MSME |
+| **lookup_gst** | 2 | GST registration details from a GSTIN |
+| **verify_pan** | 2 | Verify a PAN, return holder details |
+| **lookup_vehicle** | 2 | Vehicle + registered owner from an RC number |
+| **verify_bank_account** | 2 | No-debit bank-account validation (no money moved) |
 
 ## Transports
 

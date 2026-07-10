@@ -28,10 +28,8 @@ logger = logging.getLogger(__name__)
 
 settings = get_settings()
 
-# Import tools to register them
-if settings.enable_kyc_tools:
-    from .tools import kyc
-from .tools import platforms, commerce, investigation
+# Import tools to register them — curated Tier-1 intent surface (Phase 1).
+from .tools import intent_tools  # noqa: F401  (registration side-effect)
 
 
 @asynccontextmanager

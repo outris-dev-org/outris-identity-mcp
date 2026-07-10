@@ -27,6 +27,7 @@ from .core.auth import validate_api_key, AuthError, MCPAccount
 from .routes.user_routes import get_current_user, get_mcp_account_by_email
 from .mcp_server import OutrisMCPServer
 from .tools.registry import ToolRegistry, execute_tool, get_tool
+from .tools.helpers import classify_tool_error
 from .core.credits import (
     deduct_credits,
     record_tool_result,
@@ -51,10 +52,8 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 settings = get_settings()
 
-# Import tools to register them
-if settings.enable_kyc_tools:
-    from .tools import kyc
-from .tools import platforms, commerce, investigation
+# Import tools to register them — curated Tier-1 intent surface (Phase 1).
+from .tools import intent_tools  # noqa: F401  (registration side-effect)
 from .routes import public_router, user_router, admin_router, chat_router, demo_router, oauth_router
 
 
@@ -476,24 +475,21 @@ async def streamable_http_transport(
                 })
 
             except Exception as e:
-                error_str = str(e).lower()
-                is_backend_error = any([
-                    "backend" in error_str, "timeout" in error_str,
-                    "connection" in error_str, "503" in error_str,
-                    "502" in error_str, "500" in error_str
-                ])
+                # Typed classification — refund on our-fault (5xx/timeout) and on
+                # preflight policy rejections; never surface str(e) (may carry
+                # PII / supplier names).
+                should_refund, error_code, client_message = classify_tool_error(e)
 
-                # Record failure (and refund if backend error)
                 await record_tool_result(
                     request_id=credit_request_id,
                     success=False,
-                    error_code="backend_error" if is_backend_error else "execution_error",
-                    error_message=str(e),
-                    is_backend_error=is_backend_error
+                    error_code=error_code,
+                    error_message=str(e)[:500],
+                    is_backend_error=should_refund,
                 )
 
-                credits_status = "refunded" if is_backend_error else "charged"
-                logger.error(f"[HTTP] Tool execution failed ({credits_status}): {e}")
+                credits_status = "refunded" if should_refund else "charged"
+                logger.error(f"[HTTP] Tool execution failed ({error_code}, {credits_status}): {e}")
 
                 return JSONResponse({
                     "jsonrpc": "2.0",
@@ -501,7 +497,7 @@ async def streamable_http_transport(
                     "result": {
                         "content": [{
                             "type": "text",
-                            "text": f"Error: {str(e)}\n\n[Credits: {credits_status}]"
+                            "text": f"{client_message}\n\n[Credits: {credits_status}]"
                         }],
                         "isError": True
                     }
