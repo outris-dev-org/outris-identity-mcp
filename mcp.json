@@ -30,44 +30,64 @@
   "capabilities": {
     "tools": [
       {
-        "name": "get_identity_profile",
-        "description": "Get complete identity profile for a phone or email",
+        "name": "investigate_phone",
+        "description": "Investigate a mobile number — name, addresses, alternate phones, digital footprint (depth basic|full)",
         "credits": 3
       },
       {
-        "name": "get_name",
-        "description": "Find names linked to a phone number",
+        "name": "assess_fraud_risk",
+        "description": "Composite fraud-risk profile for a phone — SIM age, revocation, SIM-swap, digital/financial signals",
+        "credits": 3
+      },
+      {
+        "name": "find_contacts",
+        "description": "Skip-trace a phone for alternate numbers and current geocoded addresses (consent required)",
+        "credits": 3
+      },
+      {
+        "name": "due_diligence_person_start",
+        "description": "Start an async full background check on a person from phone — PEP, sanctions, enforcement, adverse media (consent, premium, ~40-70s); returns a job_id to poll with check_job",
+        "credits": 5
+      },
+      {
+        "name": "check_job",
+        "description": "Poll the status/result of an async job (e.g. from due_diligence_person_start)",
+        "credits": 0
+      },
+      {
+        "name": "investigate_email",
+        "description": "Trace the person behind an email — names, linked phones, addresses, breaches",
         "credits": 2
       },
       {
-        "name": "get_email",
-        "description": "Find emails linked to a phone number",
+        "name": "resolve_company",
+        "description": "Resolve a company from its name — returns CIN, GSTIN, MSME registration",
+        "credits": 3
+      },
+      {
+        "name": "lookup_gst",
+        "description": "GST registration details from a GSTIN",
         "credits": 2
       },
       {
-        "name": "get_address",
-        "description": "Find addresses linked to a phone number",
+        "name": "verify_pan",
+        "description": "Verify a PAN and return the holder's name, status, and type",
         "credits": 2
       },
       {
-        "name": "get_alternate_phones",
-        "description": "Find alternate phone numbers for the same person",
+        "name": "lookup_vehicle",
+        "description": "Vehicle and registered-owner details from an RC number",
         "credits": 2
       },
       {
-        "name": "check_online_platforms",
-        "description": "Check registration on 31+ platforms (India + global)",
-        "credits": 1
+        "name": "verify_bank_account",
+        "description": "No-debit bank-account validation with holder-name match (no money moved)",
+        "credits": 2
       },
       {
-        "name": "check_digital_commerce_activity",
-        "description": "Check ecommerce, travel, and quick-commerce activity",
-        "credits": 1
-      },
-      {
-        "name": "check_breaches",
-        "description": "Detect if phone/email appears in known data breaches",
-        "credits": 1
+        "name": "smart_lookup",
+        "description": "Long-tail router — natural-language question + any identifier(s) routes to the right lookup or short sequence",
+        "credits": 3
       }
     ]
   },
@@ -156,7 +176,7 @@
     "description": "Tools consume credits from account balance",
     "freeTier": {
       "credits": 100,
-      "tools": ["check_online_platforms", "check_breaches"]
+      "tools": []
     },
     "pricePerCredit": 0.01,
     "creditsPerMonth": 1000

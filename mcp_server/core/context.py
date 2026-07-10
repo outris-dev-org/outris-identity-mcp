@@ -4,3 +4,15 @@ from .auth import MCPAccount
 
 # Context variable to hold the current MCP account during request processing
 current_account: ContextVar[Optional[MCPAccount]] = ContextVar("current_account", default=None)
+
+# The credit-transaction id the transport used to deduct for THIS tool call.
+# Threaded through execute_tool so an async job can later refund on the SAME
+# request id (Phase 3 async jobs). None outside a metered tool call.
+current_credit_request_id: ContextVar[Optional[str]] = ContextVar(
+    "current_credit_request_id", default=None
+)
+
+# The portal SSO JWT of the acting user (Phase 2). In "shadow"/"sso" billing
+# mode, call_backend forwards this to the BFF portal proxy so the BFF bills the
+# user's own key natively. None when auth'd via a legacy mcp_ key or unset.
+current_user_jwt: ContextVar[Optional[str]] = ContextVar("current_user_jwt", default=None)

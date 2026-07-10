@@ -62,6 +62,7 @@ async def get_current_user(authorization: str = None) -> dict:
         }
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError as e:
         logger.warning(f"Invalid JWT token: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
 
@@ -249,6 +250,43 @@ async def get_mcp_account(request: Request):
         )
     
     return MCPAccountInfo(**account)
+
+
+# ============================================================================
+# Consent token issuer (Phase 3) — the human-gated side of the consent handshake
+# ============================================================================
+
+class ConsentAuthorizeRequest(BaseModel):
+    capability_path: str = Field(..., description="The consent-required path being authorised, e.g. /api/collections/phone")
+    subject: Optional[str] = Field(None, description="Raw identifier the consent is for; hashed server-side, never stored raw")
+    consent_text: Optional[str] = Field(None, description="Free-text consent statement shown to the user")
+
+
+@router.post("/consent/authorize")
+async def authorize_consent(req: ConsentAuthorizeRequest, request: Request):
+    """Issue a single-use, short-lived consent token AFTER the human has confirmed
+    consent in the portal. The dashboard calls this with the user's JWT; the token
+    is then relayed into chat as the tool `consent_token`. The connecting model can
+    never forge it (issuance needs this JWT + a human click)."""
+    user = await get_current_user(request.headers.get("Authorization", ""))
+    account = await get_mcp_account_by_email(user["email"])
+    if not account:
+        raise HTTPException(status_code=404, detail="MCP is not enabled for your account.")
+
+    from ..core.consent import issue_consent_token, subject_ref
+    from ..tools.capability_catalog import requires_consent
+
+    if not requires_consent(req.capability_path):
+        raise HTTPException(status_code=400, detail="That action does not require consent.")
+
+    token = await issue_consent_token(
+        account_id=account["id"],
+        user_email=account["user_email"],
+        capability_path=req.capability_path,
+        subject_ref=subject_ref(req.subject),
+        consent_text=req.consent_text,
+    )
+    return {"consent_token": token, "expires_in_minutes": 15}
 
 
 @router.post("/enable", response_model=MCPEnableResponse)

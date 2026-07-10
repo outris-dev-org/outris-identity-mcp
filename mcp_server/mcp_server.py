@@ -22,8 +22,10 @@ from mcp.types import (
     TextContent,
     ImageContent,
     EmbeddedResource,
-    LoggingLevel
+    LoggingLevel,
+    Resource,
 )
+from mcp.server.lowlevel.helper_types import ReadResourceContents
 
 from .core.config import get_settings
 from .core.database import Database
@@ -34,6 +36,7 @@ from .core.credits import (
     InsufficientCreditsError
 )
 from .tools.registry import ToolRegistry, get_tool, execute_tool
+from .tools.helpers import classify_tool_error
 
 # Configure logging
 logging.basicConfig(
@@ -45,14 +48,13 @@ logger = logging.getLogger(__name__)
 # Get settings
 settings = get_settings()
 
-# Import tools to register them
-if settings.enable_kyc_tools:
-    from .tools import kyc
-    logger.info("KYC tools enabled")
-else:
-    logger.info("KYC tools disabled")
-
-from .tools import platforms, commerce, investigation, breach
+# Import tools to register them.
+# Phase 1 (2026-07): the curated Tier-1 intent surface replaces the old
+# per-endpoint wrappers (investigation/platforms/commerce/breach/kyc). Those
+# modules remain on disk but are no longer imported, so only the ~10 intent
+# tools register — keeping the tool list small and safe for the client model.
+from .tools import intent_tools  # noqa: F401  (registration side-effect)
+logger.info("Registered Tier-1 intent tools")
 
 
 class OutrisMCPServer:
@@ -184,7 +186,11 @@ class OutrisMCPServer:
 
             # Execute tool
             try:
-                result, exec_time = await execute_tool(name, arguments)
+                result, exec_time = await execute_tool(
+                    name, arguments,
+                    account_id=self.current_account.id if self.current_account else None,
+                    credit_request_id=request_id,
+                )
 
                 # Record success
                 await record_tool_result(
@@ -207,28 +213,47 @@ class OutrisMCPServer:
             except Exception as e:
                 logger.error(f"Tool {name} failed: {e}")
 
-                # Determine if backend error (user shouldn't pay)
-                error_str = str(e).lower()
-                is_backend_error = any([
-                    "backend" in error_str, "timeout" in error_str,
-                    "connection" in error_str, "503" in error_str,
-                    "502" in error_str, "500" in error_str
-                ])
+                # Typed classification — refund on our-fault (5xx/timeout) and on
+                # preflight policy rejections; never leak str(e) to the client.
+                should_refund, error_code, client_message = classify_tool_error(e)
 
-                # Record failure
                 await record_tool_result(
                     request_id=request_id,
                     success=False,
-                    error_code="backend_error" if is_backend_error else "execution_error",
-                    error_message=str(e),
-                    is_backend_error=is_backend_error
+                    error_code=error_code,
+                    error_message=str(e)[:500],
+                    is_backend_error=should_refund,
                 )
 
-                credits_status = "refunded" if is_backend_error else "charged"
+                credits_status = "refunded" if should_refund else "charged"
                 return [TextContent(
                     type="text",
-                    text=f"Error: {str(e)}\n\n[Credits: {credits_status}]"
+                    text=f"{client_message}\n\n[Credits: {credits_status}]"
                 )]
+
+        # ----------------------------------------------------------------
+        # Resources — the outris://capabilities catalog (parity with the
+        # streamable-HTTP transport so stdio/SSE clients get discovery too).
+        # ----------------------------------------------------------------
+        @self.server.list_resources()
+        async def list_resources() -> list[Resource]:
+            return [Resource(
+                uri="outris://capabilities",
+                name="Outris capabilities catalog",
+                description="Every identity/KYC lookup available and the identifier each needs. "
+                            "Read this to discover what smart_lookup can answer.",
+                mimeType="application/json",
+            )]
+
+        @self.server.read_resource()
+        async def read_resource(uri) -> list[ReadResourceContents]:
+            if str(uri) != "outris://capabilities":
+                raise ValueError(f"Unknown resource: {uri}")
+            from .tools.capability_catalog import client_catalog
+            return [ReadResourceContents(
+                content=json.dumps(client_catalog()),
+                mime_type="application/json",
+            )]
 
     async def set_account(self, account: MCPAccount | None):
         """Set the authenticated account for this session."""
