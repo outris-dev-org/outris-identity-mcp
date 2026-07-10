@@ -55,16 +55,6 @@
         "credits": 0
       },
       {
-        "name": "aadhaar_okyc_init",
-        "description": "Aadhaar OKYC step 1 of 2 — sends an OTP and returns a transaction reference (consent token required)",
-        "credits": 3
-      },
-      {
-        "name": "aadhaar_okyc_verify",
-        "description": "Aadhaar OKYC step 2 of 2 — verify the OTP and return the KYC profile",
-        "credits": 0
-      },
-      {
         "name": "investigate_email",
         "description": "Trace the person behind an email — names, linked phones, addresses, breaches",
         "credits": 2

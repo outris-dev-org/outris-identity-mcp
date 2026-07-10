@@ -382,8 +382,11 @@ async def verify_bank_account(account_number: str, ifsc: str) -> dict:
     )
 
 
-# Registering the Tier-2 router (smart_lookup) + the Aadhaar OKYC 2-step tools
-# alongside the Tier-1 tools — the 3 server entrypoints import intent_tools, so
-# this brings them all with it.
+# Registering the Tier-2 router (smart_lookup) alongside the Tier-1 tools — the
+# 3 server entrypoints import intent_tools, so this brings it with them.
 from . import smart_lookup as _smart_lookup  # noqa: E402,F401
-from . import aadhaar as _aadhaar            # noqa: E402,F401
+
+# OTP-based Aadhaar OKYC tools are PARKED for now (owner: keep the surface simple,
+# no OTP APIs yet). The module (tools/aadhaar.py) + its test stay on disk; just
+# uncomment this import to re-register aadhaar_okyc_init / aadhaar_okyc_verify.
+# from . import aadhaar as _aadhaar          # noqa: E402,F401
