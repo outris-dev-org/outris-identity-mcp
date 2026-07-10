@@ -45,9 +45,12 @@ class Capability:
     static_body: Optional[dict] = None
     dispatchable: bool = True                  # False = present only for the guard SSOT
 
-    def build(self, ids: Dict[str, str], consent_val: Optional[str] = None,
-              consent_text: Optional[str] = None):
-        """Return (method, path, params, body) for execute_endpoint."""
+    def build(self, ids: Dict[str, str]):
+        """Return (method, path, params, body) for execute_endpoint.
+
+        Consent is NOT injected here (Phase 3): execute_endpoint server-injects
+        it from a validated consent token, never from a model-supplied value.
+        """
         path = self.path
         for t, v in ids.items():
             path = path.replace("{%s}" % t, quote(str(v).strip(), safe=""))
@@ -57,10 +60,6 @@ class Capability:
             for field_name, t in self.body_map:
                 if t in ids:
                     body[field_name] = ids[t].strip()
-            if self.consent:
-                body["consent"] = consent_val
-                if consent_text:
-                    body["consent_text"] = consent_text
         return self.method, path, None, body
 
 

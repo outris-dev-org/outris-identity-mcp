@@ -15,6 +15,7 @@ the vendor_gateway pan-comprehensive / rc-advance aliases.
 
 Descriptions here are CLIENT-FACING and MUST stay supplier-name free.
 """
+import asyncio
 import logging
 
 from .registry import tool
@@ -99,55 +100,77 @@ async def assess_fraud_risk(phone: str, detailed: bool = False) -> dict:
     description=(
         "Skip-trace an Indian mobile number for the person's ALTERNATE phone "
         "numbers and current, geocoded addresses. Requires the end user's "
-        "consent (set consent='Y'). Best for: debt collection, locating a "
-        "person. Do not fabricate consent — ask the user first.\n\n"
-        "Cost: 3 credits"
+        "consent: ask the user to open the consent link in portal.outris.com/mcp "
+        "and pass the consent_token they receive. Best for: debt collection, "
+        "locating a person. Never fabricate consent.\n\nCost: 3 credits"
     ),
     credits=C_HEAVY,
     parameters={
         "phone": _phone_param(),
+        "consent_token": {
+            "type": "string",
+            "description": "Server-issued consent token from portal.outris.com/mcp (preferred).",
+            "required": False,
+        },
         "consent": {
             "type": "string",
-            "description": "Must be 'Y'. Confirms the end user consented to this lookup (DPDPA).",
-            "required": True,
-        },
-        "consent_text": {
-            "type": "string",
-            "description": "Optional free-text consent declaration provided by the user.",
+            "description": "Deprecated legacy consent flag ('Y'); accepted only during migration.",
             "required": False,
         },
     },
     category="phone",
 )
-async def find_contacts(phone: str, consent: str, consent_text: str = None) -> dict:
-    p = normalize_phone(phone)
-    body = {"phone": p, "consent": consent}
-    if consent_text:
-        body["consent_text"] = consent_text
+async def find_contacts(phone: str, consent_token: str = None, consent: str = None) -> dict:
     return await execute_endpoint(
-        "POST", "/api/collections/phone", body=body, consent=consent
+        "POST", "/api/collections/phone", body={"phone": normalize_phone(phone)},
+        consent_token=consent_token, consent=consent,
     )
 
 
+async def _run_dd_job(job_id, subject, consent_token, consent, cr_id):
+    """Background worker for the async due-diligence panel. Runs the (40-70s)
+    backend call, persists the result, and refunds the ORIGINAL credit charge on
+    a backend failure via the same credit_request_id."""
+    from ..core import jobs
+    from ..core.credits import record_tool_result
+    from .helpers import BackendError
+    try:
+        result = await execute_endpoint(
+            "POST", "/api/screening/person", body={"subject": subject},
+            consent_token=consent_token, consent=consent, consume_consent=True,
+        )
+        await jobs.mark_complete(job_id, result)
+    except BackendError as e:
+        should_refund = e.status_code >= 500 or e.is_timeout
+        await jobs.mark_failed(
+            job_id, "backend_error" if should_refund else "upstream_rejected", e.client_message)
+        if should_refund and cr_id:
+            try:
+                await record_tool_result(
+                    request_id=cr_id, success=False, error_code="backend_error",
+                    error_message=e.client_message, is_backend_error=True)
+            except Exception as re:
+                logger.error(f"async refund failed for job {job_id}: {re}")
+    except Exception as e:
+        await jobs.mark_failed(job_id, "execution_error", str(e)[:200])
+
+
 @tool(
-    name="due_diligence_person",
+    name="due_diligence_person_start",
     description=(
-        "Run a full due-diligence / background check on a PERSON, anchored on "
-        "their mobile number (optionally add name, PAN, DOB, email, city for "
-        "accuracy). Covers PEP, sanctions, enforcement actions, cybercrime "
-        "reports, breaches, company directorships, and adverse media. Requires "
-        "consent (set consent='Y'). NOTE: this is a premium panel and can take "
-        "40-70 seconds. Best for: KYC/AML, compliance onboarding, vendor "
-        "screening.\n\nCost: 5 credits"
+        "Start a full due-diligence / background check on a PERSON, anchored on "
+        "their mobile number (optionally add name, PAN, DOB, email, city). Covers "
+        "PEP, sanctions, enforcement, cybercrime, breaches, directorships, and "
+        "adverse media. PREMIUM and ASYNC (~40-70s): it returns a job_id — poll "
+        "check_job until status is 'complete'. Requires consent: ask the user to "
+        "open the consent link in portal.outris.com/mcp and pass the "
+        "consent_token.\n\nCost: 5 credits"
     ),
     credits=C_SCREEN,
     parameters={
         "phone": _phone_param(),
-        "consent": {
-            "type": "string",
-            "description": "Must be 'Y'. DPDPA subject-consent attestation. Do not fabricate.",
-            "required": True,
-        },
+        "consent_token": {"type": "string", "description": "Server-issued consent token (preferred).", "required": False},
+        "consent": {"type": "string", "description": "Deprecated legacy consent flag ('Y'); migration only.", "required": False},
         "name": {"type": "string", "description": "Optional subject full name.", "required": False},
         "pan": {"type": "string", "description": "Optional PAN — strongest key for PEP/enforcement.", "required": False},
         "dob": {"type": "string", "description": "Optional date of birth (disambiguates common names).", "required": False},
@@ -156,18 +179,82 @@ async def find_contacts(phone: str, consent: str, consent_text: str = None) -> d
     },
     category="screening",
 )
-async def due_diligence_person(
-    phone: str, consent: str, name: str = None, pan: str = None,
-    dob: str = None, email: str = None, city: str = None,
+async def due_diligence_person_start(
+    phone: str, consent_token: str = None, consent: str = None, name: str = None,
+    pan: str = None, dob: str = None, email: str = None, city: str = None,
 ) -> dict:
+    from ..core.consent import validate_and_consume_consent_token
+    from ..core.context import current_account, current_credit_request_id
+    from ..core.config import get_settings
+    from ..core import jobs
+    from .helpers import ConsentRequiredError
+
+    acct = current_account.get()
+    # Fail-fast consent check (do NOT consume — the background call consumes).
+    grant = await validate_and_consume_consent_token(
+        consent_token, "/api/screening/person", acct.id if acct else None, consume=False)
+    legacy_ok = (get_settings().allow_legacy_consent_y
+                 and isinstance(consent, str) and consent.strip().upper() == "Y")
+    if grant is None and not legacy_ok:
+        raise ConsentRequiredError(
+            "This screening needs the end user's real consent. Ask the user to open the "
+            "consent link in portal.outris.com/mcp and pass the consent_token they receive.")
+
     subject = {"phone": normalize_phone(phone)}
     for k, v in (("name", name), ("pan", pan), ("dob", dob), ("email", email), ("city", city)):
         if v:
             subject[k] = v
-    return await execute_endpoint(
-        "POST", "/api/screening/person",
-        body={"subject": subject, "consent": consent}, consent=consent,
-    )
+
+    cr_id = current_credit_request_id.get()
+    try:
+        job_id = await jobs.create_job(
+            account_id=acct.id if acct else None, tool_name="due_diligence_person",
+            capability_path="/api/screening/person",
+            input_summary={"keys": list(subject.keys())}, credits_request_id=cr_id)
+    except Exception:
+        # Sync fallback (pre-migration / job store unavailable): run inline.
+        result = await execute_endpoint(
+            "POST", "/api/screening/person", body={"subject": subject},
+            consent_token=consent_token, consent=consent, consume_consent=True)
+        return {"status": "complete", "result": result}
+
+    asyncio.create_task(_run_dd_job(job_id, subject, consent_token, consent, cr_id))
+    return {"status": "running", "job_id": str(job_id), "poll_with": "check_job", "eta_seconds": "40-70"}
+
+
+@tool(
+    name="check_job",
+    description=(
+        "Check the status/result of an async job by job_id (e.g. from "
+        "due_diligence_person_start). Free to poll — wait ~10s between polls.\n\n"
+        "Cost: 0 credits"
+    ),
+    credits=0,
+    parameters={
+        "job_id": {"type": "string", "description": "The job_id returned by an async tool.", "required": True},
+    },
+    category="jobs",
+)
+async def check_job(job_id: str) -> dict:
+    from ..core.context import current_account
+    from ..core import jobs
+    acct = current_account.get()
+    row = await jobs.get_job(acct.id if acct else None, job_id)
+    if row is None:
+        return {"status": "not_found", "job_id": job_id}
+    status = row.get("status")
+    if status == "running":
+        return {"status": "running", "job_id": job_id, "hint": "poll again in ~10s"}
+    if status == "failed":
+        return {"status": "failed", "job_id": job_id, "error": row.get("error_code")}
+    result = row.get("result")
+    if isinstance(result, str):
+        import json as _json
+        try:
+            result = _json.loads(result)
+        except Exception:
+            pass
+    return {"status": "complete", "job_id": job_id, "result": result}
 
 
 # ===========================================================================
@@ -295,6 +382,8 @@ async def verify_bank_account(account_number: str, ifsc: str) -> dict:
     )
 
 
-# Registering the Tier-2 router (smart_lookup) alongside the Tier-1 tools — the
-# 3 server entrypoints import intent_tools, so this brings smart_lookup with it.
+# Registering the Tier-2 router (smart_lookup) + the Aadhaar OKYC 2-step tools
+# alongside the Tier-1 tools — the 3 server entrypoints import intent_tools, so
+# this brings them all with it.
 from . import smart_lookup as _smart_lookup  # noqa: E402,F401
+from . import aadhaar as _aadhaar            # noqa: E402,F401

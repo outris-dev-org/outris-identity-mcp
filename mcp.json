@@ -45,9 +45,24 @@
         "credits": 3
       },
       {
-        "name": "due_diligence_person",
-        "description": "Full background check on a person from phone — PEP, sanctions, enforcement, adverse media (consent, premium)",
+        "name": "due_diligence_person_start",
+        "description": "Start an async full background check on a person from phone — PEP, sanctions, enforcement, adverse media (consent, premium, ~40-70s); returns a job_id to poll with check_job",
         "credits": 5
+      },
+      {
+        "name": "check_job",
+        "description": "Poll the status/result of an async job (e.g. from due_diligence_person_start)",
+        "credits": 0
+      },
+      {
+        "name": "aadhaar_okyc_init",
+        "description": "Aadhaar OKYC step 1 of 2 — sends an OTP and returns a transaction reference (consent token required)",
+        "credits": 3
+      },
+      {
+        "name": "aadhaar_okyc_verify",
+        "description": "Aadhaar OKYC step 2 of 2 — verify the OTP and return the KYC profile",
+        "credits": 0
       },
       {
         "name": "investigate_email",

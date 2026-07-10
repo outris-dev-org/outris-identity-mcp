@@ -102,8 +102,9 @@ async def _company_and_directors(name: str, question: str) -> dict:
         "UAN, IFSC, vehicle RC, UPI VPA, UDIN, or a company name). It figures "
         "out the right lookup — or a short sequence — and returns the answer. "
         "Only pass identifiers the user actually gave you; never invent one. "
-        "For consent-required lookups, set consent='Y' only after the user "
-        "confirms.\n\nCost: 3 credits"
+        "For consent-required lookups, ask the user to open the consent link in "
+        "portal.outris.com/mcp and pass the consent_token they receive.\n\n"
+        "Cost: 3 credits"
     ),
     credits=3,
     parameters={
@@ -118,21 +119,23 @@ async def _company_and_directors(name: str, question: str) -> dict:
                            "or {\"phone\": \"9876543210\"}. Only include values the user provided.",
             "required": True,
         },
-        "consent": {
+        "consent_token": {
             "type": "string",
-            "description": "Set to 'Y' ONLY if the user has confirmed consent (needed for some lookups).",
+            "description": "Server-issued consent token from portal.outris.com/mcp "
+                           "(preferred for consent-required lookups).",
             "required": False,
         },
-        "consent_text": {
+        "consent": {
             "type": "string",
-            "description": "Optional free-text consent statement from the user.",
+            "description": "Deprecated legacy consent flag ('Y'); accepted only during "
+                           "migration. Prefer consent_token.",
             "required": False,
         },
     },
     category="router",
 )
-async def smart_lookup(question: str, identifiers=None, consent: str = None,
-                       consent_text: str = None) -> dict:
+async def smart_lookup(question: str, identifiers=None, consent_token: str = None,
+                       consent: str = None) -> dict:
     typed = _coerce_identifiers(identifiers)
 
     if not typed:
@@ -167,8 +170,11 @@ async def smart_lookup(question: str, identifiers=None, consent: str = None,
                       "consent_required": c.consent} for c in tied],
         )
 
-    method, path, params, body = top.build(typed, consent, consent_text)
-    result = await execute_endpoint(method, path, params=params, body=body, consent=consent)
+    method, path, params, body = top.build(typed)
+    result = await execute_endpoint(
+        method, path, params=params, body=body,
+        consent_token=consent_token, consent=consent,
+    )
     payload = {
         "status": "ok",
         "routing_trace": {

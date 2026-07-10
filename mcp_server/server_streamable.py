@@ -469,7 +469,8 @@ async def streamable_http_transport(
                 result, execution_time = await execute_tool(
                     name=tool_name,
                     arguments=arguments,
-                    account_id=account.id
+                    account_id=account.id,
+                    credit_request_id=credit_request_id,
                 )
 
                 # Record success

@@ -47,6 +47,12 @@ class Settings(BaseSettings):
     
     # Feature Flags
     enable_kyc_tools: bool = False  # Disabled by default in public repo
+
+    # Phase 3 consent migration: while True, a model-supplied consent="Y" is still
+    # accepted for consent-required lookups (backwards compatible). Flip to False
+    # once the portal consent-token issuer is live so ONLY a server-issued,
+    # human-gated consent_token is honoured (the model can't fabricate one).
+    allow_legacy_consent_y: bool = True
     
     class Config:
         env_file = ".env"

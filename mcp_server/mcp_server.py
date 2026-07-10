@@ -184,7 +184,11 @@ class OutrisMCPServer:
 
             # Execute tool
             try:
-                result, exec_time = await execute_tool(name, arguments)
+                result, exec_time = await execute_tool(
+                    name, arguments,
+                    account_id=self.current_account.id if self.current_account else None,
+                    credit_request_id=request_id,
+                )
 
                 # Record success
                 await record_tool_result(

@@ -78,14 +78,15 @@ instead of a flat list of ~100 endpoints. See [TOOLS.md](TOOLS.md) for details.
 |------|---------|----------|
 | **investigate_phone** | 3 | Who is behind a mobile — names, addresses, alt-phones, footprint (`depth` basic/full) |
 | **assess_fraud_risk** | 3 | Composite fraud-risk profile for a phone |
-| **find_contacts** | 3 | Skip-trace alt phones + geocoded addresses (consent) |
-| **due_diligence_person** | 5 | Background check — PEP/sanctions/enforcement/adverse media (consent, premium) |
+| **find_contacts** | 3 | Skip-trace alt phones + geocoded addresses (consent token) |
+| **due_diligence_person_start** / **check_job** | 5 / 0 | Async background check — PEP/sanctions/enforcement/adverse media (consent, premium, 40–70s → poll) |
 | **investigate_email** | 2 | Trace the person behind an email |
 | **resolve_company** | 3 | Company name → CIN + GSTIN/MSME |
 | **lookup_gst** | 2 | GST registration details from a GSTIN |
 | **verify_pan** | 2 | Verify a PAN, return holder details |
 | **lookup_vehicle** | 2 | Vehicle + registered owner from an RC number |
 | **verify_bank_account** | 2 | No-debit bank-account validation (no money moved) |
+| **aadhaar_okyc_init** / **aadhaar_okyc_verify** | 3 / 0 | Aadhaar OKYC 2-step (OTP) — consent token required |
 | **smart_lookup** | 3 | Long-tail router — NL question + any identifier → the right lookup/sequence |
 
 ## Transports

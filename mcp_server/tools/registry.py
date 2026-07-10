@@ -137,44 +137,53 @@ def get_tool(name: str) -> Optional[ToolDefinition]:
 async def execute_tool(
     name: str,
     arguments: dict,
-    account_id: int = None
+    account_id: int = None,
+    credit_request_id: str = None,
 ) -> tuple[dict, float]:
     """
     Execute a tool and return result with execution time.
-    
+
     Returns:
         Tuple of (result_dict, execution_time_ms)
     """
     tool_def = ToolRegistry.get(name)
     if tool_def is None:
         raise ValueError(f"Unknown tool: {name}")
-    
+
     if not tool_def.enabled:
         raise ValueError(f"Tool is disabled: {name}")
-    
+
     start_time = time.time()
-    
+
+    from ..core.context import current_account, current_credit_request_id
     token = None
+    cr_token = None
     try:
         # Set context if account_id provided
         if account_id:
             from ..core.auth import get_account_by_id
-            from ..core.context import current_account
-            
+
             account = await get_account_by_id(account_id)
             if account:
                 token = current_account.set(account)
 
+        # Thread the credit-transaction id so an async job can refund on the
+        # SAME request id later (Phase 3 async jobs).
+        if credit_request_id:
+            cr_token = current_credit_request_id.set(credit_request_id)
+
         result = await tool_def.handler(**arguments)
         execution_time = (time.time() - start_time) * 1000
         return result, execution_time
-        
+
     except Exception as e:
         execution_time = (time.time() - start_time) * 1000
         logger.error(f"Tool {name} failed: {e}")
         raise
-        
+
     finally:
         # Reset context
         if token:
             current_account.reset(token)
+        if cr_token:
+            current_credit_request_id.reset(cr_token)

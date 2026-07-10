@@ -10,14 +10,17 @@ answer without choosing between dozens of low-level APIs.
 |------|---------|-------|--------------|
 | **investigate_phone** | 3 | phone (+`depth`) | Who is behind a mobile — names, addresses, alternate phones, digital footprint. `depth=basic` (fast) or `full` (comprehensive). |
 | **assess_fraud_risk** | 3 | phone | Composite fraud-risk profile — SIM age, revocation, SIM-swap, digital/financial exposure. |
-| **find_contacts** | 3 | phone + consent | Skip-trace alternate phone numbers + current geocoded addresses. **Consent required.** |
-| **due_diligence_person** | 5 | phone + consent (+name/PAN/DOB/…) | Full background check — PEP, sanctions, enforcement, cybercrime, breaches, directorships, adverse media. **Consent + premium; 40–70s.** |
+| **find_contacts** | 3 | phone + `consent_token` | Skip-trace alternate phone numbers + current geocoded addresses. **Consent required.** |
+| **due_diligence_person_start** | 5 | phone + `consent_token` (+name/PAN/DOB/…) | Full background check — PEP, sanctions, enforcement, cybercrime, breaches, directorships, adverse media. **Async (40–70s): returns a `job_id`, poll `check_job`.** Consent + premium. |
+| **check_job** | 0 | job_id | Poll an async job (e.g. from `due_diligence_person_start`) until `complete`. Free. |
 | **investigate_email** | 2 | email | Trace the person behind an email — names, phones, addresses, breaches. |
 | **resolve_company** | 3 | company name | Resolve a company to its CIN + GSTIN/MSME registrations. |
 | **lookup_gst** | 2 | GSTIN | GST registration details (name, status, address). |
 | **verify_pan** | 2 | PAN | Verify a PAN and return the holder's name/status/type. |
 | **lookup_vehicle** | 2 | RC number | Vehicle + registered-owner details from a registration number. |
 | **verify_bank_account** | 2 | account + IFSC | No-debit bank-account validation + holder name. **No money moved.** |
+| **aadhaar_okyc_init** | 3 | Aadhaar + `consent_token` | Aadhaar OKYC step 1 of 2 — sends an OTP, returns a transaction reference. **Consent required.** |
+| **aadhaar_okyc_verify** | 0 | transaction_id + OTP + `consent_token` | Aadhaar OKYC step 2 of 2 — verify the OTP, return the KYC profile. |
 | **smart_lookup** | 3 | question + any identifier(s) | The long-tail router — ask a natural-language question and pass the identifier(s) you have (phone/email/PAN/GSTIN/CIN/DIN/UAN/IFSC/RC/VPA/UDIN/company name); it picks the right lookup or short sequence. |
 
 **Discovery resource:** `outris://capabilities` (MCP resource) lists every
@@ -29,8 +32,11 @@ on demand instead of loading dozens of tool schemas.
 - **No money movement.** Penny-drop / reverse-penny are **not exposed** as tools
   and are hard-blocked in the generic executor. `verify_bank_account` uses the
   no-debit path only.
-- **Consent.** Consent-required tools reject the call unless `consent='Y'` is
-  supplied; the model must collect real user consent, never fabricate it.
+- **Consent (Phase 3).** Consent-required tools accept only a server-issued,
+  human-gated `consent_token` (from portal.outris.com/mcp) — the model cannot
+  fabricate it. A legacy `consent='Y'` is honoured only while
+  `allow_legacy_consent_y` is true (migration), then disabled. Aadhaar OKYC OTP
+  is a normal argument the user pastes, never elicited.
 - **No supplier leakage.** Internal data-provider names are scrubbed from every
   response and error.
 - **PII masking.** Accounts without `allow_raw_records` get PII (names, PAN,
@@ -45,5 +51,10 @@ on demand instead of loading dozens of tool schemas.
   projection of number-lookup's `endpoint_catalog.py` (fetched at runtime) so the
   ultimate source of truth is the backend; per-user backend keys; expand the
   catalog to the full endpoint set.
-- **Phase 3:** MCP elicitation for consent + Aadhaar OKYC OTP; async jobs for
-  long-running tools; explicit (default-off) money tools if ever needed.
+- **Phase 3 (done):** server-issued consent-token handshake (real MCP elicitation
+  is impossible on the stateless transport + unsupported by the Claude.ai client);
+  Aadhaar OKYC 2-step tool; async jobs (`due_diligence_person_start` + `check_job`)
+  for long-running tools.
+- **Phase 3 go-live:** apply `phase3_consent_and_jobs.sql` to the shared Postgres,
+  ship the portal consent screen (→ `POST /api/mcp/consent/authorize`), then flip
+  `allow_legacy_consent_y` to false to enforce token-only consent.
