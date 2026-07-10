@@ -78,6 +78,11 @@
         "name": "verify_bank_account",
         "description": "No-debit bank-account validation with holder-name match (no money moved)",
         "credits": 2
+      },
+      {
+        "name": "smart_lookup",
+        "description": "Long-tail router — natural-language question + any identifier(s) routes to the right lookup or short sequence",
+        "credits": 3
       }
     ]
   },

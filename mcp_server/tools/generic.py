@@ -21,55 +21,15 @@ from .helpers import (
     ConsentRequiredError,
     MoneyPathBlockedError,
 )
+# Money / consent classification is derived from the capability catalog — the
+# SINGLE source of truth in this repo (Phase 2, review must-fix #1). generic.py
+# no longer keeps its own duplicate sets that would drift from the backend.
+# (PHASE-3 follow-up: generate that catalog from number-lookup's
+# endpoint_catalog.py so the ultimate source of truth is the backend itself.)
+from .capability_catalog import is_money_movement_path, requires_consent
 from ..core.context import current_account
 
 logger = logging.getLogger(__name__)
-
-
-# ---------------------------------------------------------------------------
-# Money-movement paths — real ₹ transfers. NEVER reachable through the generic
-# executor or any LLM-driven path. Exact paths only, so the safe read-only
-# siblings (pennyless / reverse-penny QR + status polls) stay reachable.
-#
-# PHASE-2 TODO: promote this to a first-class ``money_movement`` flag on
-# ``endpoint_catalog.py`` (the single source of truth) and derive the block from
-# there. A hardcoded set in this repo WILL drift the moment a new penny-drop
-# provider/path is added on the backend (see the "more penny-drop providers
-# incoming" note). Until then, keep this list in lockstep with the backend.
-# ---------------------------------------------------------------------------
-MONEY_MOVEMENT_PATHS = {
-    "/api/kyc/bank/penny-drop",
-    "/api/kyc/bank/reverse-penny",
-}
-
-# ---------------------------------------------------------------------------
-# DPDPA consent-required paths. A truthy consent ("Y") must be forwarded.
-# PHASE-2 TODO: derive from ``endpoint_catalog.consent_required`` and enforce via
-# MCP elicitation so consent can't be synthesised by the model in the same turn.
-# ---------------------------------------------------------------------------
-CONSENT_REQUIRED_PATHS = {
-    "/api/screening/person",
-    "/api/collections/phone",
-    "/api/kyc/mobile-to-pan",
-    "/api/kyc/pan-to-mobile",
-    "/api/kyc/uan-history",
-    "/api/vehicle/rc-to-mobile",
-    "/api/kyc/aadhaar/okyc/init",
-    "/api/kyc/aadhaar/okyc/verify",
-}
-
-
-def _clean_path(path: str) -> str:
-    """Strip query string + trailing slash for exact-path matching."""
-    return path.split("?", 1)[0].rstrip("/")
-
-
-def is_money_movement_path(path: str) -> bool:
-    return _clean_path(path) in MONEY_MOVEMENT_PATHS
-
-
-def requires_consent(path: str) -> bool:
-    return _clean_path(path) in CONSENT_REQUIRED_PATHS
 
 
 async def execute_endpoint(

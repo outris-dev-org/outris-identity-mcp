@@ -86,6 +86,7 @@ instead of a flat list of ~100 endpoints. See [TOOLS.md](TOOLS.md) for details.
 | **verify_pan** | 2 | Verify a PAN, return holder details |
 | **lookup_vehicle** | 2 | Vehicle + registered owner from an RC number |
 | **verify_bank_account** | 2 | No-debit bank-account validation (no money moved) |
+| **smart_lookup** | 3 | Long-tail router — NL question + any identifier → the right lookup/sequence |
 
 ## Transports
 

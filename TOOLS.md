@@ -18,6 +18,11 @@ answer without choosing between dozens of low-level APIs.
 | **verify_pan** | 2 | PAN | Verify a PAN and return the holder's name/status/type. |
 | **lookup_vehicle** | 2 | RC number | Vehicle + registered-owner details from a registration number. |
 | **verify_bank_account** | 2 | account + IFSC | No-debit bank-account validation + holder name. **No money moved.** |
+| **smart_lookup** | 3 | question + any identifier(s) | The long-tail router — ask a natural-language question and pass the identifier(s) you have (phone/email/PAN/GSTIN/CIN/DIN/UAN/IFSC/RC/VPA/UDIN/company name); it picks the right lookup or short sequence. |
+
+**Discovery resource:** `outris://capabilities` (MCP resource) lists every
+long-tail lookup `smart_lookup` can reach and the identifier each needs — read it
+on demand instead of loading dozens of tool schemas.
 
 ## Safety guarantees (enforced server-side, not by prompt)
 
@@ -33,8 +38,12 @@ answer without choosing between dozens of low-level APIs.
 
 ## Roadmap
 
-- **Phase 2:** `smart_lookup(question, identifiers)` router for the long tail of
-  ~100 endpoints + a `list_capabilities` discovery resource; catalog-derived
-  money/consent flags; per-user backend keys.
+- **Phase 2 (done):** `smart_lookup` router + `outris://capabilities` resource;
+  money/consent flags consolidated into a single in-repo catalog
+  (`capability_catalog.py`) that the executor's guards derive from.
+- **Phase 2 follow-up:** generate `capability_catalog.py` from a client-safe
+  projection of number-lookup's `endpoint_catalog.py` (fetched at runtime) so the
+  ultimate source of truth is the backend; per-user backend keys; expand the
+  catalog to the full endpoint set.
 - **Phase 3:** MCP elicitation for consent + Aadhaar OKYC OTP; async jobs for
   long-running tools; explicit (default-off) money tools if ever needed.

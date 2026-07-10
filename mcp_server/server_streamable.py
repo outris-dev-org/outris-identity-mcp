@@ -28,6 +28,7 @@ from .routes.user_routes import get_current_user, get_mcp_account_by_email
 from .mcp_server import OutrisMCPServer
 from .tools.registry import ToolRegistry, execute_tool, get_tool
 from .tools.helpers import classify_tool_error
+from .tools.capability_catalog import client_catalog
 from .core.credits import (
     deduct_credits,
     record_tool_result,
@@ -318,6 +319,42 @@ async def streamable_http_transport(
                 "jsonrpc": "2.0",
                 "id": request_id,
                 "result": {"tools": tools}
+            })
+
+        # ====================================================================
+        # Method: resources/list + resources/read (public discovery)
+        # The `outris://capabilities` resource lets the client model see the
+        # full long-tail catalog on demand WITHOUT loading 100 tool schemas.
+        # ====================================================================
+        elif method == "resources/list":
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"resources": [{
+                    "uri": "outris://capabilities",
+                    "name": "Outris capabilities catalog",
+                    "description": "Every identity/KYC lookup available and the identifier each needs. "
+                                   "Read this to discover what smart_lookup can answer.",
+                    "mimeType": "application/json",
+                }]}
+            })
+
+        elif method == "resources/read":
+            uri = params.get("uri")
+            if uri != "outris://capabilities":
+                return JSONResponse({
+                    "jsonrpc": "2.0", "id": request_id,
+                    "error": {"code": -32602, "message": "Invalid params", "data": f"Unknown resource: {uri}"}
+                })
+            catalog_json = json.dumps(client_catalog(), cls=CustomJSONEncoder)
+            return JSONResponse({
+                "jsonrpc": "2.0",
+                "id": request_id,
+                "result": {"contents": [{
+                    "uri": "outris://capabilities",
+                    "mimeType": "application/json",
+                    "text": catalog_json,
+                }]}
             })
 
         # ====================================================================

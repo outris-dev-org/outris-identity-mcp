@@ -293,3 +293,8 @@ async def verify_bank_account(account_number: str, ifsc: str) -> dict:
         "POST", "/api/kyc/bank/pennyless",
         body={"account_number": account_number.strip(), "ifsc": ifsc.strip().upper()},
     )
+
+
+# Registering the Tier-2 router (smart_lookup) alongside the Tier-1 tools — the
+# 3 server entrypoints import intent_tools, so this brings smart_lookup with it.
+from . import smart_lookup as _smart_lookup  # noqa: E402,F401
