@@ -226,15 +226,23 @@ async def call_backend(
         Response JSON as dict
     """
     settings = get_settings()
+
+    # Phase 2: in "shadow"/"sso" billing mode, route USER traffic through the
+    # per-user portal proxy so the BFF meters + bills the user's own key natively.
+    # An explicit api_key (internal callers) or "ledger" mode keeps the direct
+    # shared-key path unchanged.
+    mode = getattr(settings, "mcp_billing_mode", "ledger")
+    if mode != "ledger" and api_key is None:
+        return await _call_backend_via_proxy(endpoint, method, params, json_data)
+
     client = await get_http_client()
-    
     url = f"{settings.backend_url}{endpoint}"
     headers = {
         "X-API-Key": api_key or settings.backend_api_key,
         "Content-Type": "application/json",
         "Accept": "application/json"
     }
-    
+
     logger.debug(f"Calling backend: {method} {url}")
 
     try:
@@ -266,6 +274,73 @@ async def call_backend(
     except Exception as e:
         logger.error(f"Backend call failed: {e}")
         raise BackendError(status_code=502, client_message="Failed to reach the upstream service.")
+
+
+async def _call_backend_via_proxy(endpoint: str, method: str, params: dict, json_data: dict) -> dict:
+    """Call the BFF as the acting user via POST /api/portal/execute.
+
+    The BFF decrypts the user's own portal key, loopbacks the real request, and
+    attributes usage/billing to the user's public.api_keys family — so the MCP
+    needs NO credit ledger of its own. The proxy returns a wrapper
+    ``{status_code, ok, body}``; a wrapped status >= 400 becomes a typed
+    BackendError so classify_tool_error / async-refund logic is unchanged.
+    """
+    from ..core.context import current_user_jwt, current_credit_request_id
+
+    settings = get_settings()
+    jwt = current_user_jwt.get()
+    if not jwt:
+        # No acting user session -> cannot bill anyone; fail closed (refundable).
+        raise BackendError(status_code=401, client_message="Missing user session for this request.")
+
+    client = await get_http_client()
+    proxy_url = f"{settings.backend_url}/api/portal/execute"
+    headers = {
+        "Authorization": f"Bearer {jwt}",
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+    }
+    cr_id = current_credit_request_id.get()
+    if cr_id:
+        headers["X-Transaction-Id"] = str(cr_id)  # correlate mcp.* tool lens <-> api_usage_log
+    payload = {
+        "method": method.upper(),
+        "path": endpoint,
+        "body": json_data,
+        "query": params,
+    }
+
+    logger.debug(f"Calling backend via portal proxy: {method} {endpoint}")
+    try:
+        response = await client.post(proxy_url, json=payload, headers=headers)
+        response.raise_for_status()      # proxy-level failure (503 no-encryption, 500, 502)
+        wrapped = response.json()
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Portal proxy HTTP error: {e.response.status_code} - {e.response.text[:300]}")
+        raise BackendError(
+            status_code=e.response.status_code,
+            client_message=f"Upstream service returned HTTP {e.response.status_code}.",
+        )
+    except (httpx.TimeoutException, httpx.ConnectTimeout, httpx.ReadTimeout) as e:
+        logger.error(f"Portal proxy timeout: {e}")
+        raise BackendError(status_code=504, client_message="Upstream service timed out.", is_timeout=True)
+    except BackendError:
+        raise
+    except Exception as e:
+        logger.error(f"Portal proxy call failed: {e}")
+        raise BackendError(status_code=502, client_message="Failed to reach the upstream service.")
+
+    # Unwrap {status_code, ok, body}. A wrapped 4xx/5xx maps to BackendError so
+    # the existing refund / classification logic keeps working.
+    status = wrapped.get("status_code", 200)
+    body = wrapped.get("body")
+    if status >= 400:
+        logger.error(f"Proxied backend returned {status} for {endpoint}")
+        raise BackendError(
+            status_code=status,
+            client_message=f"Upstream service returned HTTP {status}.",
+        )
+    return scrub_supplier_names(body)
 
 
 def normalize_phone(phone: str) -> str:

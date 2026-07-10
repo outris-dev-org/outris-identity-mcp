@@ -34,10 +34,30 @@ async def deduct_credits(
     
     Returns:
         Tuple of (balance_before, balance_after)
-    
+
     Raises:
         InsufficientCreditsError: If not enough credits
     """
+    from .config import get_settings
+    if get_settings().mcp_billing_mode != "ledger":
+        # Phase 2: the BFF portal proxy is the meter. Record the tool call for
+        # observability ONLY — no balance mutation, no InsufficientCredits.
+        try:
+            await Database.execute(
+                """
+                INSERT INTO mcp.user_tool_calls (
+                    request_id, user_account_id, tool_name, credits_cost,
+                    credits_charged, credits_before, credits_after,
+                    input_params, success, created_at
+                ) VALUES ($1, $2, $3, $4, 0, 0, 0, $5, FALSE, NOW())
+                """,
+                uuid.UUID(request_id), account.id, tool_name, credits_cost,
+                json.dumps(input_summary) if input_summary else None,
+            )
+        except Exception as e:  # observability insert must never block the tool call
+            logger.warning(f"user_tool_calls observability insert failed: {e}")
+        return 0, 0
+
     async with Database.transaction() as conn:
         # Lock the row and get current balance
         row = await conn.fetchrow(
@@ -217,6 +237,13 @@ async def _refund_credits_for_backend_error(request_id: str) -> None:
     Refund credits when a backend error occurs.
     User shouldn't pay for our failures.
     """
+    from .config import get_settings
+    if get_settings().mcp_billing_mode != "ledger":
+        # BFF is the meter and only bills on HTTP 2xx — a backend 5xx is never
+        # billed, so there is nothing to refund. The mcp.user_tool_calls row is
+        # still marked is_backend_error by record_tool_result (observability).
+        return
+
     # Get the tool call details
     row = await Database.fetchrow(
         """

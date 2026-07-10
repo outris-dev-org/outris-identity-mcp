@@ -53,6 +53,22 @@ class CustomJSONEncoder(json.JSONEncoder):
 
 settings = get_settings()
 
+
+async def _fetch_allow_raw(email: str) -> bool:
+    """Most-permissive allow_raw_records across this user's active api_keys.
+    Mirrors core/auth.validate_api_key so the JWT path masks consistently."""
+    try:
+        row = await Database.fetchrow(
+            "SELECT bool_or(allow_raw_records) AS allow_raw FROM public.api_keys "
+            "WHERE client_email = $1 AND is_active = TRUE",
+            email,
+        )
+        return bool(row and row["allow_raw"])
+    except Exception as e:
+        logger.warning(f"allow_raw lookup failed for {email} (default masked): {e}")
+        return False
+
+
 # Import tools to register them — curated Tier-1 intent surface (Phase 1).
 from .tools import intent_tools  # noqa: F401  (registration side-effect)
 from .routes import public_router, user_router, admin_router, chat_router, demo_router, oauth_router
@@ -395,19 +411,24 @@ async def streamable_http_transport(
 
             auth_token = authorization.replace("Bearer ", "")
             account = None
+            user_jwt = None
 
             # Try to validate as JWT (OAuth) first, then as API Key
             try:
                 if auth_token.startswith("ey"):
-                    # Validate as JWT
+                    # Validate as JWT (portal SSO)
                     user_info = await get_current_user(authorization)  # Pass full header
                     account_data = await get_mcp_account_by_email(user_info["email"])
-                    
+
                     if not account_data:
                         raise AuthError("No MCP account found for this user", "no_account")
-                        
+
+                    # FIX (Phase 2): the JWT path previously omitted allow_raw_records,
+                    # so JWT-authed users were ALWAYS masked regardless of permission.
+                    # Wire it from public.api_keys, same as the mcp_-key path does.
+                    allow_raw = await _fetch_allow_raw(user_info["email"])
+
                     # Convert dict to MCPAccount object
-                    # Ensure we handle all fields correctly, using defaults for optionals
                     account = MCPAccount(
                         id=account_data["id"],
                         user_email=account_data["user_email"],
@@ -416,8 +437,12 @@ async def streamable_http_transport(
                         credits_tier=account_data["credits_tier"],
                         is_active=account_data["is_active"],
                         stripe_customer_id=account_data.get("stripe_customer_id"),
-                        last_connected_at=account_data.get("last_connected_at")
+                        last_connected_at=account_data.get("last_connected_at"),
+                        allow_raw_records=allow_raw,
                     )
+                    # Forward the user's JWT so call_backend can bill via the
+                    # per-user portal proxy in shadow/sso billing mode.
+                    user_jwt = auth_token
                 else:
                     # Validate as MCP API Key
                     account = await validate_api_key(auth_token)
@@ -471,6 +496,7 @@ async def streamable_http_transport(
                     arguments=arguments,
                     account_id=account.id,
                     credit_request_id=credit_request_id,
+                    user_jwt=user_jwt,
                 )
 
                 # Record success
@@ -482,9 +508,13 @@ async def streamable_http_transport(
                     backend_endpoint=tool_name
                 )
 
-                # Format result with credit metadata
+                # Format result with metadata. In shadow/sso mode the mcp credit
+                # ledger is frozen (BFF meters), so don't show a stale balance.
                 result_text = json.dumps(result, cls=CustomJSONEncoder)
-                metadata = f"\n\n[Credits: -{tool_def.credits} | Remaining: {balance_after} | Time: {execution_time:.0f}ms]"
+                if settings.mcp_billing_mode == "ledger":
+                    metadata = f"\n\n[Credits: -{tool_def.credits} | Remaining: {balance_after} | Time: {execution_time:.0f}ms]"
+                else:
+                    metadata = f"\n\n[Time: {execution_time:.0f}ms]"
 
                 logger.info(f"[HTTP] {tool_name} executed successfully in {execution_time:.0f}ms")
                 return JSONResponse({

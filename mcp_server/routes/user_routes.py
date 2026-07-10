@@ -62,6 +62,7 @@ async def get_current_user(authorization: str = None) -> dict:
         }
     except jwt.ExpiredSignatureError:
         raise HTTPException(status_code=401, detail="Token expired")
+    except jwt.InvalidTokenError as e:
         logger.warning(f"Invalid JWT token: {e}")
         raise HTTPException(status_code=401, detail="Invalid token")
 

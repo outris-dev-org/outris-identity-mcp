@@ -139,6 +139,7 @@ async def execute_tool(
     arguments: dict,
     account_id: int = None,
     credit_request_id: str = None,
+    user_jwt: str = None,
 ) -> tuple[dict, float]:
     """
     Execute a tool and return result with execution time.
@@ -155,9 +156,10 @@ async def execute_tool(
 
     start_time = time.time()
 
-    from ..core.context import current_account, current_credit_request_id
+    from ..core.context import current_account, current_credit_request_id, current_user_jwt
     token = None
     cr_token = None
+    jwt_token = None
     try:
         # Set context if account_id provided
         if account_id:
@@ -171,6 +173,11 @@ async def execute_tool(
         # SAME request id later (Phase 3 async jobs).
         if credit_request_id:
             cr_token = current_credit_request_id.set(credit_request_id)
+
+        # Thread the acting user's portal JWT so call_backend can bill via the
+        # per-user portal proxy (Phase 2 "shadow"/"sso" billing modes).
+        if user_jwt:
+            jwt_token = current_user_jwt.set(user_jwt)
 
         result = await tool_def.handler(**arguments)
         execution_time = (time.time() - start_time) * 1000
@@ -187,3 +194,5 @@ async def execute_tool(
             current_account.reset(token)
         if cr_token:
             current_credit_request_id.reset(cr_token)
+        if jwt_token:
+            current_user_jwt.reset(jwt_token)
