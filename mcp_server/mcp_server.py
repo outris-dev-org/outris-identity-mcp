@@ -22,8 +22,10 @@ from mcp.types import (
     TextContent,
     ImageContent,
     EmbeddedResource,
-    LoggingLevel
+    LoggingLevel,
+    Resource,
 )
+from mcp.server.lowlevel.helper_types import ReadResourceContents
 
 from .core.config import get_settings
 from .core.database import Database
@@ -228,6 +230,30 @@ class OutrisMCPServer:
                     type="text",
                     text=f"{client_message}\n\n[Credits: {credits_status}]"
                 )]
+
+        # ----------------------------------------------------------------
+        # Resources — the outris://capabilities catalog (parity with the
+        # streamable-HTTP transport so stdio/SSE clients get discovery too).
+        # ----------------------------------------------------------------
+        @self.server.list_resources()
+        async def list_resources() -> list[Resource]:
+            return [Resource(
+                uri="outris://capabilities",
+                name="Outris capabilities catalog",
+                description="Every identity/KYC lookup available and the identifier each needs. "
+                            "Read this to discover what smart_lookup can answer.",
+                mimeType="application/json",
+            )]
+
+        @self.server.read_resource()
+        async def read_resource(uri) -> list[ReadResourceContents]:
+            if str(uri) != "outris://capabilities":
+                raise ValueError(f"Unknown resource: {uri}")
+            from .tools.capability_catalog import client_catalog
+            return [ReadResourceContents(
+                content=json.dumps(client_catalog()),
+                mime_type="application/json",
+            )]
 
     async def set_account(self, account: MCPAccount | None):
         """Set the authenticated account for this session."""
