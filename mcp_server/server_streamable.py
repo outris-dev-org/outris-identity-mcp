@@ -21,7 +21,8 @@ from mcp.server.sse import SseServerTransport
 from mcp.server import Server
 from mcp.types import Tool, TextContent
 
-from .core.config import get_settings
+from .core.config import get_settings, effective_billing_mode_for
+from .core.context import current_billing_mode
 from .core.database import Database
 from .core.auth import validate_api_key, AuthError, MCPAccount
 from .routes.user_routes import get_current_user, get_mcp_account_by_email
@@ -478,7 +479,13 @@ async def streamable_http_transport(
             # Generate a unique request ID for credit tracking
             credit_request_id = str(uuid.uuid4())
 
-            logger.info(f"[HTTP] Executing tool: {tool_name} (credit_req={credit_request_id})")
+            # Resolve the per-request billing mode (per-email canary aware) and
+            # set it BEFORE deduct so the ledger-freeze + proxy-routing agree —
+            # a shadow user must never be double-billed.
+            effective_mode = effective_billing_mode_for(account.user_email, user_jwt is not None)
+            mode_token = current_billing_mode.set(effective_mode)
+
+            logger.info(f"[HTTP] Executing tool: {tool_name} (credit_req={credit_request_id}, mode={effective_mode})")
 
             try:
                 # Deduct credits before execution
@@ -570,6 +577,10 @@ async def streamable_http_transport(
                         "isError": True
                     }
                 })
+
+            finally:
+                # Always clear the per-request billing mode contextvar.
+                current_billing_mode.reset(mode_token)
 
         # ====================================================================
         # Unknown method

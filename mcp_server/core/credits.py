@@ -38,8 +38,8 @@ async def deduct_credits(
     Raises:
         InsufficientCreditsError: If not enough credits
     """
-    from .config import get_settings
-    if get_settings().mcp_billing_mode != "ledger":
+    from .config import get_effective_billing_mode
+    if get_effective_billing_mode() != "ledger":
         # Phase 2: the BFF portal proxy is the meter. Record the tool call for
         # observability ONLY — no balance mutation, no InsufficientCredits.
         try:
@@ -237,8 +237,8 @@ async def _refund_credits_for_backend_error(request_id: str) -> None:
     Refund credits when a backend error occurs.
     User shouldn't pay for our failures.
     """
-    from .config import get_settings
-    if get_settings().mcp_billing_mode != "ledger":
+    from .config import get_effective_billing_mode
+    if get_effective_billing_mode() != "ledger":
         # BFF is the meter and only bills on HTTP 2xx — a backend 5xx is never
         # billed, so there is nothing to refund. The mcp.user_tool_calls row is
         # still marked is_backend_error by record_tool_result (observability).

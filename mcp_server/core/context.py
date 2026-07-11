@@ -16,3 +16,9 @@ current_credit_request_id: ContextVar[Optional[str]] = ContextVar(
 # mode, call_backend forwards this to the BFF portal proxy so the BFF bills the
 # user's own key natively. None when auth'd via a legacy mcp_ key or unset.
 current_user_jwt: ContextVar[Optional[str]] = ContextVar("current_user_jwt", default=None)
+
+# The effective billing mode for THIS request (ledger|shadow|sso), resolved by
+# the transport (per-email canary aware) and read by call_backend + the credit
+# ledger so proxy-routing and ledger-freeze can never diverge. None = fall back
+# to the global setting.
+current_billing_mode: ContextVar[Optional[str]] = ContextVar("current_billing_mode", default=None)
