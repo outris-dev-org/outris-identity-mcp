@@ -230,8 +230,9 @@ async def call_backend(
     # Phase 2: in "shadow"/"sso" billing mode, route USER traffic through the
     # per-user portal proxy so the BFF meters + bills the user's own key natively.
     # An explicit api_key (internal callers) or "ledger" mode keeps the direct
-    # shared-key path unchanged.
-    mode = getattr(settings, "mcp_billing_mode", "ledger")
+    # shared-key path unchanged. The mode is per-request (per-email canary aware).
+    from ..core.config import get_effective_billing_mode
+    mode = get_effective_billing_mode()
     if mode != "ledger" and api_key is None:
         return await _call_backend_via_proxy(endpoint, method, params, json_data)
 

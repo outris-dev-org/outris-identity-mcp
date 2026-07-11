@@ -64,6 +64,13 @@ class Settings(BaseSettings):
     # The proxy-routing and the ledger-freeze are tied to this ONE flag so they
     # can never diverge (no double-billing). Default "ledger" ships inert.
     mcp_billing_mode: str = "ledger"
+
+    # Per-email canary override: comma-separated emails that route through the
+    # portal proxy (shadow) EVEN WHEN mcp_billing_mode is "ledger" — but only if
+    # they authenticated with a portal JWT (a JWT is required to proxy). Lets us
+    # validate SSO billing for one/few testers without a full cutover. Empty =
+    # nobody overridden.
+    mcp_shadow_emails: str = ""
     
     class Config:
         env_file = ".env"
@@ -76,3 +83,32 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Get cached settings instance."""
     return Settings()
+
+
+def _shadow_email_set() -> set:
+    raw = get_settings().mcp_shadow_emails or ""
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
+def effective_billing_mode_for(email: str, has_jwt: bool) -> str:
+    """Resolve the billing mode for THIS request (per-email canary aware).
+
+    - If the global mode is not "ledger" (shadow/sso), it applies to everyone.
+    - Otherwise a JWT-authed user whose email is in MCP_SHADOW_EMAILS is routed
+      through the portal proxy ("shadow"); everyone else stays "ledger".
+    A JWT is required for the proxy, so mcp_-key users never get shadowed.
+    """
+    mode = get_settings().mcp_billing_mode
+    if mode != "ledger":
+        return mode
+    if has_jwt and email and email.strip().lower() in _shadow_email_set():
+        return "shadow"
+    return "ledger"
+
+
+def get_effective_billing_mode() -> str:
+    """The mode for the CURRENT tool call: the per-request contextvar if set
+    (populated by the transport via execute_tool), else the global setting.
+    Read this in call_backend / the credit ledger so both agree."""
+    from .context import current_billing_mode
+    return current_billing_mode.get() or get_settings().mcp_billing_mode

@@ -140,6 +140,7 @@ async def execute_tool(
     account_id: int = None,
     credit_request_id: str = None,
     user_jwt: str = None,
+    billing_mode: str = None,
 ) -> tuple[dict, float]:
     """
     Execute a tool and return result with execution time.
@@ -156,10 +157,13 @@ async def execute_tool(
 
     start_time = time.time()
 
-    from ..core.context import current_account, current_credit_request_id, current_user_jwt
+    from ..core.context import (
+        current_account, current_credit_request_id, current_user_jwt, current_billing_mode,
+    )
     token = None
     cr_token = None
     jwt_token = None
+    mode_token = None
     try:
         # Set context if account_id provided
         if account_id:
@@ -179,6 +183,11 @@ async def execute_tool(
         if user_jwt:
             jwt_token = current_user_jwt.set(user_jwt)
 
+        # Thread the per-request effective billing mode (per-email canary aware)
+        # so call_backend + the credit ledger agree.
+        if billing_mode:
+            mode_token = current_billing_mode.set(billing_mode)
+
         result = await tool_def.handler(**arguments)
         execution_time = (time.time() - start_time) * 1000
         return result, execution_time
@@ -196,3 +205,5 @@ async def execute_tool(
             current_credit_request_id.reset(cr_token)
         if jwt_token:
             current_user_jwt.reset(jwt_token)
+        if mode_token:
+            current_billing_mode.reset(mode_token)
