@@ -50,11 +50,14 @@ settings = get_settings()
 
 # Import tools to register them.
 # Phase 1 (2026-07): the curated Tier-1 intent surface replaces the old
-# per-endpoint wrappers (investigation/platforms/commerce/breach/kyc). Those
-# modules remain on disk but are no longer imported, so only the ~10 intent
-# tools register — keeping the tool list small and safe for the client model.
+# per-endpoint wrappers. Intent tools stay the primary MCP surface.
+# Demo / playground also needs the legacy platform + name + commerce tools
+# (portal.outris.com/dashboard/ai-playground → /api/public/try-tool).
 from .tools import intent_tools  # noqa: F401  (registration side-effect)
-logger.info("Registered Tier-1 intent tools")
+from .tools import platforms as _demo_platforms  # noqa: F401
+from .tools import investigation as _demo_investigation  # noqa: F401
+from .tools import commerce as _demo_commerce  # noqa: F401
+logger.info("Registered Tier-1 intent tools + demo playground tools")
 
 
 class OutrisMCPServer:
