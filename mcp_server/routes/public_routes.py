@@ -24,7 +24,17 @@ router = APIRouter(prefix="/api/public", tags=["Public"])
 
 # Rate limiting configuration
 DAILY_LIMIT = 3
-ALLOWED_TOOLS = ["phone_to_name", "check_online_platforms", "digital_commerce"]
+# Canonical demo tool names (must match registered @tool handlers + portal).
+ALLOWED_TOOLS = [
+    "get_name",
+    "check_online_platforms",
+    "check_digital_commerce_activity",
+]
+# Legacy aliases accepted by /api/public/try-tool for older clients.
+TOOL_ALIASES = {
+    "phone_to_name": "get_name",
+    "digital_commerce": "check_digital_commerce_activity",
+}
 DEMO_FULL_ACCESS_KEY = os.getenv("DEMO_FULL_ACCESS_KEY") # If set, this key bypasses sanitization
 
 # In-memory rate limit store
@@ -182,13 +192,14 @@ async def try_tool_anonymous(
     
     if not is_allowed:
         raise HTTPException(429, detail={"error": "Daily limit reached.", "remaining_tries": 0})
-    
-    if body.tool not in ALLOWED_TOOLS:
+
+    tool_name = TOOL_ALIASES.get(body.tool, body.tool)
+    if tool_name not in ALLOWED_TOOLS:
         return TryToolResponse(success=False, error="Tool not available", remaining_tries=remaining)
-    
+
     try:
-        logger.info(f"Demo tool call: {body.tool} from IP hash {ip_hash}")
-        result, _ = await execute_tool(body.tool, body.inputs)
+        logger.info(f"Demo tool call: {tool_name} (requested={body.tool}) from IP hash {ip_hash}")
+        result, _ = await execute_tool(tool_name, body.inputs)
         remaining = _increment_usage(ip_hash)
         
         # Check if full access is authorized

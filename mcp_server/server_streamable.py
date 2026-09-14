@@ -70,8 +70,12 @@ async def _fetch_allow_raw(email: str) -> bool:
         return False
 
 
-# Import tools to register them — curated Tier-1 intent surface (Phase 1).
+# Import tools to register them — curated Tier-1 intent surface (Phase 1),
+# plus demo playground tools used by /api/public/try-tool.
 from .tools import intent_tools  # noqa: F401  (registration side-effect)
+from .tools import platforms as _demo_platforms  # noqa: F401
+from .tools import investigation as _demo_investigation  # noqa: F401
+from .tools import commerce as _demo_commerce  # noqa: F401
 from .routes import public_router, user_router, admin_router, chat_router, demo_router, oauth_router
 
 
