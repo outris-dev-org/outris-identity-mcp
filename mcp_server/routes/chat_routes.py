@@ -199,6 +199,70 @@ async def _execute_one_tool(
         return {"error": client_message}, credits, client_message, duration
 
 
+# ---------------------------------------------------------------------------
+# Per-message usage logging.
+# Records EVERY AI-chat request — user, model, Anthropic TOKEN spend, tools,
+# credits, success/error — to mcp.ai_chat_log. This is the ONLY place the
+# per-message LLM cost is captured (tool-call credits alone don't reflect chat
+# cost: a message that calls no tool still burns Anthropic tokens). Best-effort:
+# it must NEVER break or slow a chat.
+# ---------------------------------------------------------------------------
+_chat_log_table_ready = False
+
+
+async def _ensure_chat_log_table() -> None:
+    global _chat_log_table_ready
+    if _chat_log_table_ready:
+        return
+    try:
+        await Database.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mcp.ai_chat_log (
+                id              BIGSERIAL PRIMARY KEY,
+                ts              TIMESTAMPTZ NOT NULL DEFAULT now(),
+                user_account_id BIGINT,
+                user_email      TEXT,
+                model           TEXT,
+                iterations      INT,
+                input_tokens    INT,
+                output_tokens   INT,
+                tools_used      TEXT[],
+                credits_used    INT,
+                ok              BOOLEAN,
+                error           TEXT,
+                duration_ms     INT
+            )
+            """
+        )
+        await Database.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_log_ts ON mcp.ai_chat_log (ts DESC)")
+        await Database.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_log_email ON mcp.ai_chat_log (user_email, ts DESC)")
+        _chat_log_table_ready = True
+    except Exception as e:
+        logger.warning(f"ai_chat_log table ensure failed: {e}")
+
+
+async def _log_chat_usage(account, model, iterations, input_tokens, output_tokens,
+                          tools_used, credits_used, ok, error, duration_ms) -> None:
+    """Best-effort insert of one chat request's usage. Never raises."""
+    try:
+        await _ensure_chat_log_table()
+        await Database.execute(
+            """
+            INSERT INTO mcp.ai_chat_log
+              (user_account_id, user_email, model, iterations, input_tokens,
+               output_tokens, tools_used, credits_used, ok, error, duration_ms)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            """,
+            getattr(account, "id", None),
+            getattr(account, "user_email", None),
+            model, int(iterations or 0), int(input_tokens or 0), int(output_tokens or 0),
+            list(tools_used or []), int(credits_used or 0), bool(ok),
+            (error or None), int(duration_ms or 0),
+        )
+    except Exception as e:
+        logger.warning(f"ai_chat_log insert failed: {e}")
+
+
 async def iter_agentic_events(
     user_message: str,
     account: MCPAccount,
@@ -208,6 +272,8 @@ async def iter_agentic_events(
     client = get_anthropic_client()
     tools = get_anthropic_tools()
     model = DEFAULT_CHAT_MODEL
+    usage_in = 0
+    usage_out = 0
 
     messages: List[Dict[str, Any]] = [{"role": "user", "content": user_message}]
     tools_used: List[str] = []
@@ -230,6 +296,15 @@ async def iter_agentic_events(
             tools=tools,
             messages=messages,
         )
+
+        # Accumulate Anthropic token spend for this chat request (cost signal).
+        try:
+            _u = getattr(response, "usage", None)
+            if _u:
+                usage_in += getattr(_u, "input_tokens", 0) or 0
+                usage_out += getattr(_u, "output_tokens", 0) or 0
+        except Exception:
+            pass
 
         if response.stop_reason == "tool_use":
             tool_blocks = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
@@ -295,10 +370,17 @@ async def iter_agentic_events(
             yield {"type": "text", "content": final_text[i : i + chunk_size]}
             await asyncio.sleep(0)  # let the event loop flush SSE
 
+        await _log_chat_usage(
+            account, model, iteration + 1, usage_in, usage_out,
+            tools_used, total_credits, True, None,
+            int((time.perf_counter() - loop_started) * 1000),
+        )
         yield {
             "type": "done",
             "tools_used": tools_used,
             "credits_used": total_credits,
+            "input_tokens": usage_in,
+            "output_tokens": usage_out,
             "total_duration": round(time.perf_counter() - loop_started, 2),
         }
         return
@@ -309,10 +391,17 @@ async def iter_agentic_events(
         "Try a more specific question (e.g. “assess fraud risk for +91…”)."
     )
     yield {"type": "text", "content": fallback}
+    await _log_chat_usage(
+        account, model, max_iterations, usage_in, usage_out,
+        tools_used, total_credits, True, "max_iterations",
+        int((time.perf_counter() - loop_started) * 1000),
+    )
     yield {
         "type": "done",
         "tools_used": tools_used,
         "credits_used": total_credits,
+        "input_tokens": usage_in,
+        "output_tokens": usage_out,
         "total_duration": round(time.perf_counter() - loop_started, 2),
     }
 
@@ -421,6 +510,7 @@ async def chat(request: Request, body: ChatRequest):
         raise
     except Exception as e:
         logger.error(f"AI Chat error: {e}")
+        await _log_chat_usage(account, DEFAULT_CHAT_MODEL, 0, 0, 0, [], 0, False, str(e)[:500], 0)
         raise HTTPException(500, _friendly_chat_error(e))
 
 
@@ -446,6 +536,7 @@ async def chat_stream(request: Request, body: ChatRequest):
                 yield f"data: {json.dumps(event, default=str)}\n\n"
         except Exception as e:
             logger.error(f"Stream error: {e}")
+            await _log_chat_usage(account, DEFAULT_CHAT_MODEL, 0, 0, 0, [], 0, False, str(e)[:500], 0)
             yield f"data: {json.dumps({'type': 'error', 'message': _friendly_chat_error(e)})}\n\n"
 
     return StreamingResponse(
