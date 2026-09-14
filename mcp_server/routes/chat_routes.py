@@ -52,6 +52,35 @@ MAX_CHAT_ITERATIONS = 3
 _anthropic_client = None
 
 
+def _friendly_chat_error(exc: BaseException) -> str:
+    """Map provider errors to actionable, non-leaky user messages."""
+    text = str(exc)
+    lower = text.lower()
+    if (
+        "credit balance is too low" in lower
+        or "plans & billing" in lower
+        or ("anthropic" in lower and "billing" in lower)
+        or ("invalid_request_error" in lower and "credit" in lower)
+    ):
+        return (
+            "AI Chat is temporarily unavailable: the Anthropic API account "
+            "powering this playground is out of credits. Your TraceFlow MCP "
+            "credits are unaffected — use Manual mode for now, or ask an "
+            "admin to top up Anthropic billing / rotate ANTHROPIC_API_KEY."
+        )
+    if "authentication" in lower or "invalid api key" in lower or "401" in lower:
+        return (
+            "AI Chat is unavailable: the Anthropic API key is invalid or expired. "
+            "Use Manual mode, or ask an admin to update ANTHROPIC_API_KEY."
+        )
+    if "rate limit" in lower or "429" in lower:
+        return "AI Chat is rate-limited right now. Please wait a moment and try again."
+    # Strip huge Anthropic JSON blobs from the UI.
+    if "Error code:" in text and len(text) > 180:
+        return "AI Chat failed talking to the model provider. Please try again shortly, or use Manual mode."
+    return text[:300]
+
+
 def get_anthropic_client():
     """Get or create Async Anthropic client."""
     global _anthropic_client
@@ -392,7 +421,7 @@ async def chat(request: Request, body: ChatRequest):
         raise
     except Exception as e:
         logger.error(f"AI Chat error: {e}")
-        raise HTTPException(500, f"AI Chat error: {str(e)}")
+        raise HTTPException(500, _friendly_chat_error(e))
 
 
 @router.post("/stream")
@@ -417,7 +446,7 @@ async def chat_stream(request: Request, body: ChatRequest):
                 yield f"data: {json.dumps(event, default=str)}\n\n"
         except Exception as e:
             logger.error(f"Stream error: {e}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': _friendly_chat_error(e)})}\n\n"
 
     return StreamingResponse(
         generate(),
@@ -430,15 +459,48 @@ async def chat_stream(request: Request, body: ChatRequest):
     )
 
 
+_provider_probe_cache: Dict[str, Any] = {"checked_at": 0.0, "ok": None, "error": None}
+_PROVIDER_PROBE_TTL_SEC = 120
+
+
 @router.get("/status")
 async def chat_status():
-    """Check if AI Chat is available."""
+    """Check if AI Chat is available (cached Anthropic probe)."""
     api_key = os.getenv("ANTHROPIC_API_KEY")
     tools = get_anthropic_tools()
+    provider_ok = None
+    provider_error = None
+
+    if api_key:
+        now = time.time()
+        cached = _provider_probe_cache
+        if cached["ok"] is not None and (now - float(cached["checked_at"])) < _PROVIDER_PROBE_TTL_SEC:
+            provider_ok = bool(cached["ok"])
+            provider_error = cached["error"]
+        else:
+            try:
+                client = get_anthropic_client()
+                await client.messages.create(
+                    model=DEFAULT_CHAT_MODEL,
+                    max_tokens=1,
+                    messages=[{"role": "user", "content": "ping"}],
+                )
+                provider_ok = True
+                provider_error = None
+            except Exception as e:
+                provider_ok = False
+                provider_error = _friendly_chat_error(e)
+                logger.warning(f"AI chat provider probe failed: {e}")
+            _provider_probe_cache.update(
+                {"checked_at": now, "ok": provider_ok, "error": provider_error}
+            )
+
     return {
-        "available": bool(api_key),
+        "available": bool(api_key) and provider_ok is not False,
         "tools_enabled": True,
         "tools_count": len(tools),
         "tools": [t.get("name") for t in tools],
         "model": DEFAULT_CHAT_MODEL,
+        "provider_ok": provider_ok,
+        "provider_error": provider_error,
     }
