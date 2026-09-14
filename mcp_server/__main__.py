@@ -16,7 +16,6 @@ Or for deployment:
 import asyncio
 import sys
 import logging
-from .mcp_server import OutrisMCPServer
 from .core.config import get_settings
 from .core.database import Database
 
@@ -31,20 +30,24 @@ logger = logging.getLogger(__name__)
 
 async def main_stdio():
     """Run MCP server with STDIO transport (CLI mode)."""
+    # Lazy import — OutrisMCPServer must not load during --http startup
+    # (module-level init uses MCP SDK APIs that differ by package version).
+    from .mcp_server import OutrisMCPServer
+
     logger.info("Starting Outris MCP Server (STDIO transport)...")
-    
+
     # Initialize database
     await Database.connect()
     logger.info("Database connected")
-    
+
     try:
         # Create and run MCP server
         server = OutrisMCPServer()
         logger.info("MCP Server initialized")
-        
+
         # Import stdio_server
         from mcp.server.stdio import stdio_server
-        
+
         logger.info("Running STDIO transport...")
         async with stdio_server() as (read_stream, write_stream):
             logger.info("STDIO streams established")
@@ -65,9 +68,9 @@ async def main_http():
     """Run MCP server with HTTP transport (web server mode)."""
     import uvicorn
     from .server_streamable import app
-    
+
     logger.info("Starting Outris MCP Server (HTTP/SSE transports)...")
-    
+
     config = uvicorn.Config(
         app,
         host="0.0.0.0",
@@ -81,7 +84,7 @@ async def main_http():
 def main():
     """Determine transport mode and run."""
     settings = get_settings()
-    
+
     # Check command line arguments
     if len(sys.argv) > 1:
         if sys.argv[1] == "--http":

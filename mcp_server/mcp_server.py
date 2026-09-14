@@ -271,8 +271,16 @@ class OutrisMCPServer:
         return self.server
 
 
-# Create global server instance
-mcp_server_instance = OutrisMCPServer()
+# Create global server instance lazily — importing this module must not
+# construct OutrisMCPServer (HTTP mode never needs it, and SDK APIs vary).
+mcp_server_instance = None
+
+
+def get_mcp_server_instance() -> OutrisMCPServer:
+    global mcp_server_instance
+    if mcp_server_instance is None:
+        mcp_server_instance = OutrisMCPServer()
+    return mcp_server_instance
 
 
 async def run_mcp_server():
@@ -281,15 +289,17 @@ async def run_mcp_server():
     await Database.connect()
     logger.info("Database connected")
 
+    instance = get_mcp_server_instance()
+
     # Log registered tools
     logger.info(f"Registered tools: {list(ToolRegistry.get_all().keys())}")
 
     # Run server
     async with stdio_server() as (read_stream, write_stream):
-        await mcp_server_instance.get_server().run(
+        await instance.get_server().run(
             read_stream,
             write_stream,
-            mcp_server_instance.get_server().create_initialization_options()
+            instance.get_server().create_initialization_options()
         )
 
 
