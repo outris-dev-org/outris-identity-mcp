@@ -231,9 +231,12 @@ async def call_backend(
     # per-user portal proxy so the BFF meters + bills the user's own key natively.
     # An explicit api_key (internal callers) or "ledger" mode keeps the direct
     # shared-key path unchanged. The mode is per-request (per-email canary aware).
+    # Anonymous / demo calls have no JWT — fall through to the shared backend key
+    # so /api/public/try-tool keeps working.
     from ..core.config import get_effective_billing_mode
+    from ..core.context import current_user_jwt
     mode = get_effective_billing_mode()
-    if mode != "ledger" and api_key is None:
+    if mode != "ledger" and api_key is None and current_user_jwt.get():
         return await _call_backend_via_proxy(endpoint, method, params, json_data)
 
     client = await get_http_client()
