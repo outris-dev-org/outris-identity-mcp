@@ -10,14 +10,21 @@ Endpoints for user self-service MCP management:
 import secrets
 import hashlib
 import logging
+import uuid
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Optional, Any, Dict
 
 from fastapi import APIRouter, HTTPException, Depends, Query, Request
 from pydantic import BaseModel, Field
 
 from ..core.database import Database
-from ..core.config import get_settings
+from ..core.auth import get_account_by_id
+from ..core.config import get_settings, effective_billing_mode_for
+from ..core.context import current_billing_mode
+from ..core.credits import deduct_credits, record_tool_result, InsufficientCreditsError
+from ..tools.helpers import classify_tool_error
+from ..tools.registry import execute_tool, get_tool
+from .public_routes import TOOL_ALIASES
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/mcp", tags=["MCP User"])
@@ -250,6 +257,125 @@ async def get_mcp_account(request: Request):
         )
     
     return MCPAccountInfo(**account)
+
+
+class RunToolRequest(BaseModel):
+    tool: str
+    inputs: Dict[str, Any] = Field(default_factory=dict)
+
+
+class RunToolResponse(BaseModel):
+    success: bool
+    result: Optional[Dict[str, Any]] = None
+    error: Optional[str] = None
+    demo_mode: bool = False
+    sanitized: bool = False
+    credits_remaining: Optional[int] = None
+    credits_charged: Optional[int] = None
+
+
+@router.post("/run-tool", response_model=RunToolResponse)
+async def run_tool_authenticated(body: RunToolRequest, request: Request):
+    """Run one playground tool for a signed-in MCP account.
+
+    Anonymous visitors stay on POST /api/public/try-tool (three demo tools).
+    The portal manual runner used to call that demo route even after login,
+    so get_email and every other non-demo tool returned "Tool not available".
+    """
+    auth_header = request.headers.get("Authorization", "")
+    user = await get_current_user(auth_header)
+    info = await get_mcp_account_by_email(user["email"])
+    if not info or not info.get("is_active"):
+        raise HTTPException(status_code=400, detail="MCP not enabled. Please enable MCP access first.")
+
+    account = await get_account_by_id(info["id"])
+    if account is None or not account.is_active:
+        raise HTTPException(status_code=400, detail="MCP account not found.")
+
+    tool_name = TOOL_ALIASES.get(body.tool, body.tool)
+    tool_def = get_tool(tool_name)
+    if tool_def is None or not tool_def.enabled:
+        return RunToolResponse(success=False, error="Tool not available")
+
+    user_jwt = auth_header[7:] if auth_header.startswith("Bearer ") else None
+    effective_mode = effective_billing_mode_for(account.user_email, bool(user_jwt))
+    mode_token = current_billing_mode.set(effective_mode)
+    request_id = str(uuid.uuid4())
+    try:
+        try:
+            await deduct_credits(
+                account=account,
+                tool_name=tool_name,
+                credits_cost=tool_def.credits,
+                request_id=request_id,
+                input_summary={"args": list((body.inputs or {}).keys())},
+            )
+        except InsufficientCreditsError as e:
+            return RunToolResponse(
+                success=False,
+                error=f"Insufficient credits: need {e.required}, have {e.available}.",
+                credits_remaining=e.available,
+            )
+
+        try:
+            result, exec_ms = await execute_tool(
+                tool_name,
+                body.inputs or {},
+                account_id=account.id,
+                credit_request_id=request_id,
+                user_jwt=user_jwt,
+                billing_mode=effective_mode,
+            )
+        except Exception as e:
+            should_refund, error_code, client_message = classify_tool_error(e)
+            await record_tool_result(
+                request_id=request_id,
+                success=False,
+                error_code=error_code,
+                error_message=str(e)[:500],
+                is_backend_error=should_refund,
+            )
+            logger.error("Playground tool %s failed (%s): %s", tool_name, error_code, e)
+            balance = await Database.fetchval(
+                "SELECT credits_balance FROM mcp.user_accounts WHERE id = $1",
+                account.id,
+            )
+            return RunToolResponse(
+                success=False,
+                error=client_message,
+                credits_remaining=balance,
+                credits_charged=None if should_refund else tool_def.credits,
+            )
+
+        await record_tool_result(
+            request_id=request_id,
+            success=True,
+            output_summary={"keys": list(result.keys())} if isinstance(result, dict) else None,
+            latency_ms=exec_ms,
+            backend_endpoint=tool_name,
+        )
+
+        payload_ok = True
+        payload_error = None
+        if isinstance(result, dict) and result.get("success") is False:
+            payload_ok = False
+            payload_error = str(result.get("error") or "Tool returned an error")
+
+        balance = await Database.fetchval(
+            "SELECT credits_balance FROM mcp.user_accounts WHERE id = $1",
+            account.id,
+        )
+        charged = tool_def.credits if effective_mode == "ledger" else 0
+        result_body = result if isinstance(result, dict) else {"value": result}
+        return RunToolResponse(
+            success=payload_ok,
+            result=result_body,
+            error=payload_error,
+            credits_remaining=balance,
+            credits_charged=charged,
+        )
+    finally:
+        current_billing_mode.reset(mode_token)
 
 
 # ============================================================================
