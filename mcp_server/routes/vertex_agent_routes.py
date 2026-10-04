@@ -9,7 +9,7 @@ from ..core.auth import get_account_by_id
 from ..core.credits import InsufficientCreditsError, deduct_credits, record_tool_result
 from ..tools.registry import ToolRegistry, execute_tool
 from ..tools.helpers import classify_tool_error
-from ..routes.chat_routes import get_current_user, _load_account
+from ..core.auth import validate_api_key, AuthError
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +20,12 @@ router = APIRouter(prefix="/api/vertex-agent", tags=["Vertex AI Agent Builder Ex
 @router.post("/{tool_name}")
 async def execute_vertex_tool(tool_name: str, request: Request):
     """Execute an MCP tool via a standard REST POST request for Vertex Agent Builder."""
-    # 1. Authenticate user
+    # 1. Authenticate user using the Vertex Agent's static API Key
     auth_header = request.headers.get("Authorization", "")
     try:
-        user = await get_current_user(auth_header)
-        account = await _load_account(user["email"])
-    except HTTPException as e:
-        raise e
+        account = await validate_api_key(auth_header)
+    except AuthError as e:
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {e.message}")
     except Exception as e:
         raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")
 
