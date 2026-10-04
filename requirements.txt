@@ -9,4 +9,4 @@ pydantic-settings>=2.1.0
 python-dotenv>=1.0.0
 pyjwt>=2.8.0
 cryptography>=42.0.0
-anthropic>=0.7.0
+anthropic[vertex]>=0.7.0

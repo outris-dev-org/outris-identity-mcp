@@ -28,6 +28,7 @@ class MCPAccount:
     stripe_customer_id: Optional[str] = None
     last_connected_at: Optional[datetime] = None
     allow_raw_records: bool = False
+    persona: str = "general"  # Role-based tool access (e.g., fraud, collections, underwriting)
 
 
 class AuthError(Exception):
