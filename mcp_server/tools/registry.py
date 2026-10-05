@@ -22,6 +22,7 @@ class ToolDefinition:
     parameters: dict = field(default_factory=dict)
     category: str = "general"
     enabled: bool = True
+    allowed_personas: Optional[list[str]] = None
 
 
 class ToolRegistry:
@@ -37,7 +38,8 @@ class ToolRegistry:
         credits: int,
         parameters: dict = None,
         category: str = "general",
-        enabled: bool = True
+        enabled: bool = True,
+        allowed_personas: Optional[list[str]] = None
     ) -> Callable:
         """Decorator to register a tool."""
         def decorator(func: Callable) -> Callable:
@@ -48,7 +50,8 @@ class ToolRegistry:
                 handler=func,
                 parameters=parameters or {},
                 category=category,
-                enabled=enabled
+                enabled=enabled,
+                allowed_personas=allowed_personas
             )
             status = "enabled" if enabled else "DISABLED"
             logger.info(f"Registered tool: {name} ({credits} credits) [{status}]")
