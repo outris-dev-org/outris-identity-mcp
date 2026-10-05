@@ -1,0 +1,534 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Outris TraceFlow MCP - Vertex AI Extension",
+    "description": "REST API bridge for Vertex AI Agent Builder to access Outris TraceFlow capabilities.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://mcp-server.outris.com",
+      "description": "Production Server"
+    }
+  ],
+  "paths": {
+    "/api/vertex-agent/investigate_phone": {
+      "post": {
+        "summary": "investigate_phone",
+        "description": "Investigate an Indian mobile number and return who is behind it \u2014 name(s), addresses, alternate phone numbers, and social/digital footprint. Use depth='basic' for a fast identity bundle (default) or depth='full' for a comprehensive multi-source investigation (slower). Best for: 'who owns this number', caller ID, KYC, skip-tracing.",
+        "operationId": "investigate_phone",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "depth": {
+                    "type": "string",
+                    "description": "basic = fast identity bundle (default); full = comprehensive investigation (slower)."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/assess_fraud_risk": {
+      "post": {
+        "summary": "assess_fraud_risk",
+        "description": "Assess the fraud risk of an Indian mobile number. Returns a composite risk profile: SIM age / age-on-network, number revocation status, SIM-swap / port signals, and digital & financial exposure. Set detailed=true for the full signal breakdown. Best for: onboarding risk checks, is-this-number-risky.",
+        "operationId": "assess_fraud_risk",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "detailed": {
+                    "type": "boolean",
+                    "description": "Include the full raw signal breakdown. Default false."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/find_contacts": {
+      "post": {
+        "summary": "find_contacts",
+        "description": "Skip-trace an Indian mobile number for the person's ALTERNATE phone numbers and current, geocoded addresses. Requires the end user's consent: ask the user to open the consent link in portal.outris.com/mcp and pass the consent_token they receive. Best for: debt collection, locating a person. Never fabricate consent.",
+        "operationId": "find_contacts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "consent_token": {
+                    "type": "string",
+                    "description": "Server-issued consent token from portal.outris.com/mcp (preferred)."
+                  },
+                  "consent": {
+                    "type": "string",
+                    "description": "Deprecated legacy consent flag ('Y'); accepted only during migration."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/due_diligence_person_start": {
+      "post": {
+        "summary": "due_diligence_person_start",
+        "description": "Start a full due-diligence / background check on a PERSON, anchored on their mobile number (optionally add name, PAN, DOB, email, city). Covers PEP, sanctions, enforcement, cybercrime, breaches, directorships, and adverse media. PREMIUM and ASYNC (~40-70s): it returns a job_id \u2014 poll check_job until status is 'complete'. Requires consent: ask the user to open the consent link in portal.outris.com/mcp and pass the consent_token.",
+        "operationId": "due_diligence_person_start",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "consent_token": {
+                    "type": "string",
+                    "description": "Server-issued consent token (preferred)."
+                  },
+                  "consent": {
+                    "type": "string",
+                    "description": "Deprecated legacy consent flag ('Y'); migration only."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Optional subject full name."
+                  },
+                  "pan": {
+                    "type": "string",
+                    "description": "Optional PAN \u2014 strongest key for PEP/enforcement."
+                  },
+                  "dob": {
+                    "type": "string",
+                    "description": "Optional date of birth (disambiguates common names)."
+                  },
+                  "email": {
+                    "type": "string",
+                    "description": "Optional subject email."
+                  },
+                  "city": {
+                    "type": "string",
+                    "description": "Optional city (adverse-media disambiguation)."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/check_job": {
+      "post": {
+        "summary": "check_job",
+        "description": "Check the status/result of an async job by job_id (e.g. from due_diligence_person_start). Free to poll \u2014 wait ~10s between polls.",
+        "operationId": "check_job",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string",
+                    "description": "The job_id returned by an async tool."
+                  }
+                },
+                "required": [
+                  "job_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/investigate_email": {
+      "post": {
+        "summary": "investigate_email",
+        "description": "Trace the person behind an email address \u2014 linked names, phone numbers, addresses, and known data breaches. Best for: reverse email lookup, digital footprint, cross-referencing an identity.",
+        "operationId": "investigate_email",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "description": "Email address to investigate."
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/resolve_company": {
+      "post": {
+        "summary": "resolve_company",
+        "description": "Resolve an Indian company from its NAME and return its CIN (Corporate Identification Number) plus any GSTIN / MSME registrations discovered along the way. Best for: 'is this a real company', KYB entry point, finding a CIN from a company name.",
+        "operationId": "resolve_company",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "company_name": {
+                    "type": "string",
+                    "description": "Company name to resolve."
+                  }
+                },
+                "required": [
+                  "company_name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/lookup_gst": {
+      "post": {
+        "summary": "lookup_gst",
+        "description": "Look up GST registration details for a business by its GSTIN (15-character GST number). Returns legal/trade name, status, registration type, and address. Best for: GST verification, vendor onboarding.",
+        "operationId": "lookup_gst",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "gstin": {
+                    "type": "string",
+                    "description": "15-character GSTIN."
+                  }
+                },
+                "required": [
+                  "gstin"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/verify_pan": {
+      "post": {
+        "summary": "verify_pan",
+        "description": "Verify an Indian PAN (Permanent Account Number) and return the holder's name, status, and PAN type (individual / company / etc.). Best for: KYC, PAN validity checks.",
+        "operationId": "verify_pan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pan": {
+                    "type": "string",
+                    "description": "10-character PAN (e.g. ABCDE1234F)."
+                  }
+                },
+                "required": [
+                  "pan"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/lookup_vehicle": {
+      "post": {
+        "summary": "lookup_vehicle",
+        "description": "Look up an Indian vehicle by its RC (registration) number \u2014 returns make/model, registration details, and the registered owner. Best for: vehicle verification, RC checks.",
+        "operationId": "lookup_vehicle",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rc_number": {
+                    "type": "string",
+                    "description": "Vehicle registration number (e.g. MH12AB1234)."
+                  }
+                },
+                "required": [
+                  "rc_number"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/verify_bank_account": {
+      "post": {
+        "summary": "verify_bank_account",
+        "description": "Validate an Indian bank account WITHOUT moving any money (no-debit NPCI validation) and return whether it is valid plus the account holder's name for matching. Best for: payout/beneficiary verification. This does NOT transfer funds.",
+        "operationId": "verify_bank_account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "account_number": {
+                    "type": "string",
+                    "description": "Bank account number to validate."
+                  },
+                  "ifsc": {
+                    "type": "string",
+                    "description": "IFSC code of the account's branch."
+                  }
+                },
+                "required": [
+                  "account_number",
+                  "ifsc"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/smart_lookup": {
+      "post": {
+        "summary": "smart_lookup",
+        "description": "Answer any other identity / KYC / business question when no specific tool fits. Provide a natural-language `question` plus the `identifiers` you already have (phone, email, PAN, GSTIN, CIN, DIN, UAN, IFSC, vehicle RC, UPI VPA, UDIN, or a company name). It figures out the right lookup \u2014 or a short sequence \u2014 and returns the answer. Only pass identifiers the user actually gave you; never invent one. For consent-required lookups, ask the user to open the consent link in portal.outris.com/mcp and pass the consent_token they receive.",
+        "operationId": "smart_lookup",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "description": "The user's question in plain language."
+                  },
+                  "identifiers": {
+                    "type": "object",
+                    "description": "Identifiers you have, as {type: value} \u2014 e.g. {\"pan\": \"ABCDE1234F\"} or {\"phone\": \"9876543210\"}. Only include values the user provided."
+                  },
+                  "consent_token": {
+                    "type": "string",
+                    "description": "Server-issued consent token from portal.outris.com/mcp (preferred for consent-required lookups)."
+                  },
+                  "consent": {
+                    "type": "string",
+                    "description": "Deprecated legacy consent flag ('Y'); accepted only during migration. Prefer consent_token."
+                  }
+                },
+                "required": [
+                  "question",
+                  "identifiers"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

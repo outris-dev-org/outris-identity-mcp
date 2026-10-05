@@ -82,18 +82,29 @@ def _friendly_chat_error(exc: BaseException) -> str:
 
 
 def get_anthropic_client():
-    """Get or create Async Anthropic client."""
+    """Get or create Async Anthropic (or Vertex AI) client."""
     global _anthropic_client
     if _anthropic_client is None:
         try:
-            from anthropic import AsyncAnthropic
+            project_id = os.getenv("VERTEX_PROJECT_ID")
+            region = os.getenv("VERTEX_REGION")
 
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            if not api_key:
-                raise ValueError("ANTHROPIC_API_KEY not configured")
-            _anthropic_client = AsyncAnthropic(api_key=api_key)
+            if project_id and region:
+                # Use Vertex AI if configured
+                from anthropic import AsyncAnthropicVertex
+                _anthropic_client = AsyncAnthropicVertex(
+                    project_id=project_id,
+                    region=region
+                )
+            else:
+                # Fallback to direct Anthropic API
+                from anthropic import AsyncAnthropic
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+                if not api_key:
+                    raise ValueError("ANTHROPIC_API_KEY or Vertex AI config not found")
+                _anthropic_client = AsyncAnthropic(api_key=api_key)
         except ImportError:
-            raise HTTPException(500, "Anthropic SDK not installed or configured")
+            raise HTTPException(500, "Anthropic SDK (with vertex support) not installed or configured")
         except Exception as e:
             raise HTTPException(500, f"Anthropic client error: {e}")
     return _anthropic_client
@@ -199,6 +210,70 @@ async def _execute_one_tool(
         return {"error": client_message}, credits, client_message, duration
 
 
+# ---------------------------------------------------------------------------
+# Per-message usage logging.
+# Records EVERY AI-chat request — user, model, Anthropic TOKEN spend, tools,
+# credits, success/error — to mcp.ai_chat_log. This is the ONLY place the
+# per-message LLM cost is captured (tool-call credits alone don't reflect chat
+# cost: a message that calls no tool still burns Anthropic tokens). Best-effort:
+# it must NEVER break or slow a chat.
+# ---------------------------------------------------------------------------
+_chat_log_table_ready = False
+
+
+async def _ensure_chat_log_table() -> None:
+    global _chat_log_table_ready
+    if _chat_log_table_ready:
+        return
+    try:
+        await Database.execute(
+            """
+            CREATE TABLE IF NOT EXISTS mcp.ai_chat_log (
+                id              BIGSERIAL PRIMARY KEY,
+                ts              TIMESTAMPTZ NOT NULL DEFAULT now(),
+                user_account_id BIGINT,
+                user_email      TEXT,
+                model           TEXT,
+                iterations      INT,
+                input_tokens    INT,
+                output_tokens   INT,
+                tools_used      TEXT[],
+                credits_used    INT,
+                ok              BOOLEAN,
+                error           TEXT,
+                duration_ms     INT
+            )
+            """
+        )
+        await Database.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_log_ts ON mcp.ai_chat_log (ts DESC)")
+        await Database.execute("CREATE INDEX IF NOT EXISTS idx_ai_chat_log_email ON mcp.ai_chat_log (user_email, ts DESC)")
+        _chat_log_table_ready = True
+    except Exception as e:
+        logger.warning(f"ai_chat_log table ensure failed: {e}")
+
+
+async def _log_chat_usage(account, model, iterations, input_tokens, output_tokens,
+                          tools_used, credits_used, ok, error, duration_ms) -> None:
+    """Best-effort insert of one chat request's usage. Never raises."""
+    try:
+        await _ensure_chat_log_table()
+        await Database.execute(
+            """
+            INSERT INTO mcp.ai_chat_log
+              (user_account_id, user_email, model, iterations, input_tokens,
+               output_tokens, tools_used, credits_used, ok, error, duration_ms)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+            """,
+            getattr(account, "id", None),
+            getattr(account, "user_email", None),
+            model, int(iterations or 0), int(input_tokens or 0), int(output_tokens or 0),
+            list(tools_used or []), int(credits_used or 0), bool(ok),
+            (error or None), int(duration_ms or 0),
+        )
+    except Exception as e:
+        logger.warning(f"ai_chat_log insert failed: {e}")
+
+
 async def iter_agentic_events(
     user_message: str,
     account: MCPAccount,
@@ -208,6 +283,8 @@ async def iter_agentic_events(
     client = get_anthropic_client()
     tools = get_anthropic_tools()
     model = DEFAULT_CHAT_MODEL
+    usage_in = 0
+    usage_out = 0
 
     messages: List[Dict[str, Any]] = [{"role": "user", "content": user_message}]
     tools_used: List[str] = []
@@ -230,6 +307,15 @@ async def iter_agentic_events(
             tools=tools,
             messages=messages,
         )
+
+        # Accumulate Anthropic token spend for this chat request (cost signal).
+        try:
+            _u = getattr(response, "usage", None)
+            if _u:
+                usage_in += getattr(_u, "input_tokens", 0) or 0
+                usage_out += getattr(_u, "output_tokens", 0) or 0
+        except Exception:
+            pass
 
         if response.stop_reason == "tool_use":
             tool_blocks = [b for b in response.content if getattr(b, "type", None) == "tool_use"]
@@ -295,10 +381,17 @@ async def iter_agentic_events(
             yield {"type": "text", "content": final_text[i : i + chunk_size]}
             await asyncio.sleep(0)  # let the event loop flush SSE
 
+        await _log_chat_usage(
+            account, model, iteration + 1, usage_in, usage_out,
+            tools_used, total_credits, True, None,
+            int((time.perf_counter() - loop_started) * 1000),
+        )
         yield {
             "type": "done",
             "tools_used": tools_used,
             "credits_used": total_credits,
+            "input_tokens": usage_in,
+            "output_tokens": usage_out,
             "total_duration": round(time.perf_counter() - loop_started, 2),
         }
         return
@@ -309,10 +402,17 @@ async def iter_agentic_events(
         "Try a more specific question (e.g. “assess fraud risk for +91…”)."
     )
     yield {"type": "text", "content": fallback}
+    await _log_chat_usage(
+        account, model, max_iterations, usage_in, usage_out,
+        tools_used, total_credits, True, "max_iterations",
+        int((time.perf_counter() - loop_started) * 1000),
+    )
     yield {
         "type": "done",
         "tools_used": tools_used,
         "credits_used": total_credits,
+        "input_tokens": usage_in,
+        "output_tokens": usage_out,
         "total_duration": round(time.perf_counter() - loop_started, 2),
     }
 
@@ -421,6 +521,7 @@ async def chat(request: Request, body: ChatRequest):
         raise
     except Exception as e:
         logger.error(f"AI Chat error: {e}")
+        await _log_chat_usage(account, DEFAULT_CHAT_MODEL, 0, 0, 0, [], 0, False, str(e)[:500], 0)
         raise HTTPException(500, _friendly_chat_error(e))
 
 
@@ -446,6 +547,7 @@ async def chat_stream(request: Request, body: ChatRequest):
                 yield f"data: {json.dumps(event, default=str)}\n\n"
         except Exception as e:
             logger.error(f"Stream error: {e}")
+            await _log_chat_usage(account, DEFAULT_CHAT_MODEL, 0, 0, 0, [], 0, False, str(e)[:500], 0)
             yield f"data: {json.dumps({'type': 'error', 'message': _friendly_chat_error(e)})}\n\n"
 
     return StreamingResponse(
@@ -504,3 +606,86 @@ async def chat_status():
         "provider_ok": provider_ok,
         "provider_error": provider_error,
     }
+
+@router.post("/vertex-agent")
+async def chat_vertex_agent_proxy(request: Request, body: ChatRequest):
+    """Proxy chat requests to the GCP Vertex AI Conversational Agent."""
+    from fastapi.responses import StreamingResponse
+    import httpx
+    import google.auth
+    from google.auth.transport.requests import Request as GoogleRequest
+    import asyncio
+
+    # Authenticate local user to ensure they are allowed to use the Playground
+    auth_header = request.headers.get("Authorization", "")
+    user = await get_current_user(auth_header)
+    
+    # Target Vertex Agent Configuration
+    project_id = "outris-india-prod"
+    location = "asia-south1"
+    agent_id = "4d89712f-769c-4157-b6a7-347729480ab8"
+    session_id = body.conversation_id or "test-session-123"
+
+    async def generate():
+        # Tell the UI we are starting
+        yield f"data: {json.dumps({'type': 'status', 'message': 'Consulting Vertex AI Agent Builder...'})}\n\n"
+        
+        try:
+            # Get GCP Token using Application Default Credentials
+            credentials, _ = google.auth.default()
+            credentials.refresh(GoogleRequest())
+            
+            url = f"https://{location}-dialogflow.googleapis.com/v3/projects/{project_id}/locations/{location}/agents/{agent_id}/sessions/{session_id}:detectIntent"
+            headers = {
+                "Authorization": f"Bearer {credentials.token}",
+                "Content-Type": "application/json",
+                "x-goog-user-project": project_id
+            }
+            payload = {
+                "queryInput": {
+                    "text": {"text": body.message},
+                    "languageCode": "en"
+                }
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, json=payload, timeout=60.0)
+                
+            if response.status_code != 200:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Vertex API Error: {response.text}'})}\n\n"
+                return
+
+            data = response.json()
+            messages = data.get("queryResult", {}).get("responseMessages", [])
+            
+            final_text = ""
+            for msg in messages:
+                if "text" in msg:
+                    final_text += "".join(msg["text"].get("text", [])) + "\n"
+
+            if not final_text:
+                final_text = "The agent processed the request but returned no text."
+
+            # Yield text in chunks to match the Playground UI expectations
+            chunk_size = 40
+            for i in range(0, len(final_text), chunk_size):
+                yield f"data: {json.dumps({'type': 'text', 'content': final_text[i : i + chunk_size]})}\n\n"
+                await asyncio.sleep(0.05)
+
+            # Signal completion
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Vertex Proxy Error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
