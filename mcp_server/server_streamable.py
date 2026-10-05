@@ -76,7 +76,7 @@ from .tools import intent_tools  # noqa: F401  (registration side-effect)
 from .tools import platforms as _demo_platforms  # noqa: F401
 from .tools import investigation as _demo_investigation  # noqa: F401
 from .tools import commerce as _demo_commerce  # noqa: F401
-from .routes import public_router, user_router, admin_router, chat_router, demo_router, oauth_router
+from .routes import public_router, user_router, admin_router, chat_router, demo_router, oauth_router, vertex_router
 
 
 @asynccontextmanager
@@ -118,6 +118,7 @@ app.include_router(admin_router)
 app.include_router(chat_router)
 app.include_router(demo_router)
 app.include_router(oauth_router)
+app.include_router(vertex_router)
 
 
 # ============================================================================

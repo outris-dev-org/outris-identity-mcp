@@ -82,18 +82,29 @@ def _friendly_chat_error(exc: BaseException) -> str:
 
 
 def get_anthropic_client():
-    """Get or create Async Anthropic client."""
+    """Get or create Async Anthropic (or Vertex AI) client."""
     global _anthropic_client
     if _anthropic_client is None:
         try:
-            from anthropic import AsyncAnthropic
+            project_id = os.getenv("VERTEX_PROJECT_ID")
+            region = os.getenv("VERTEX_REGION")
 
-            api_key = os.getenv("ANTHROPIC_API_KEY")
-            if not api_key:
-                raise ValueError("ANTHROPIC_API_KEY not configured")
-            _anthropic_client = AsyncAnthropic(api_key=api_key)
+            if project_id and region:
+                # Use Vertex AI if configured
+                from anthropic import AsyncAnthropicVertex
+                _anthropic_client = AsyncAnthropicVertex(
+                    project_id=project_id,
+                    region=region
+                )
+            else:
+                # Fallback to direct Anthropic API
+                from anthropic import AsyncAnthropic
+                api_key = os.getenv("ANTHROPIC_API_KEY")
+                if not api_key:
+                    raise ValueError("ANTHROPIC_API_KEY or Vertex AI config not found")
+                _anthropic_client = AsyncAnthropic(api_key=api_key)
         except ImportError:
-            raise HTTPException(500, "Anthropic SDK not installed or configured")
+            raise HTTPException(500, "Anthropic SDK (with vertex support) not installed or configured")
         except Exception as e:
             raise HTTPException(500, f"Anthropic client error: {e}")
     return _anthropic_client
@@ -595,3 +606,86 @@ async def chat_status():
         "provider_ok": provider_ok,
         "provider_error": provider_error,
     }
+
+@router.post("/vertex-agent")
+async def chat_vertex_agent_proxy(request: Request, body: ChatRequest):
+    """Proxy chat requests to the GCP Vertex AI Conversational Agent."""
+    from fastapi.responses import StreamingResponse
+    import httpx
+    import google.auth
+    from google.auth.transport.requests import Request as GoogleRequest
+    import asyncio
+
+    # Authenticate local user to ensure they are allowed to use the Playground
+    auth_header = request.headers.get("Authorization", "")
+    user = await get_current_user(auth_header)
+    
+    # Target Vertex Agent Configuration
+    project_id = "outris-india-prod"
+    location = "asia-south1"
+    agent_id = "4d89712f-769c-4157-b6a7-347729480ab8"
+    session_id = body.conversation_id or "test-session-123"
+
+    async def generate():
+        # Tell the UI we are starting
+        yield f"data: {json.dumps({'type': 'status', 'message': 'Consulting Vertex AI Agent Builder...'})}\n\n"
+        
+        try:
+            # Get GCP Token using Application Default Credentials
+            credentials, _ = google.auth.default()
+            credentials.refresh(GoogleRequest())
+            
+            url = f"https://{location}-dialogflow.googleapis.com/v3/projects/{project_id}/locations/{location}/agents/{agent_id}/sessions/{session_id}:detectIntent"
+            headers = {
+                "Authorization": f"Bearer {credentials.token}",
+                "Content-Type": "application/json",
+                "x-goog-user-project": project_id
+            }
+            payload = {
+                "queryInput": {
+                    "text": {"text": body.message},
+                    "languageCode": "en"
+                }
+            }
+            
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, headers=headers, json=payload, timeout=60.0)
+                
+            if response.status_code != 200:
+                yield f"data: {json.dumps({'type': 'error', 'message': f'Vertex API Error: {response.text}'})}\n\n"
+                return
+
+            data = response.json()
+            messages = data.get("queryResult", {}).get("responseMessages", [])
+            
+            final_text = ""
+            for msg in messages:
+                if "text" in msg:
+                    final_text += "".join(msg["text"].get("text", [])) + "\n"
+
+            if not final_text:
+                final_text = "The agent processed the request but returned no text."
+
+            # Yield text in chunks to match the Playground UI expectations
+            chunk_size = 40
+            for i in range(0, len(final_text), chunk_size):
+                yield f"data: {json.dumps({'type': 'text', 'content': final_text[i : i + chunk_size]})}\n\n"
+                await asyncio.sleep(0.05)
+
+            # Signal completion
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+        except Exception as e:
+            logger.error(f"Vertex Proxy Error: {e}")
+            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
