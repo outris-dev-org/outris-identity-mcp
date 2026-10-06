@@ -1,157 +1,120 @@
 # System Architecture
 
-The Outris Identity MCP Server follows a modular architecture designed for security, scalability, and ease of integration.
+The Outris Identity Model Context Protocol (MCP) Server is an enterprise intelligence gateway bridging LLMs and AI Agents (Vertex AI Agent Builder, Claude Desktop, Cursor, and Outris AI Playground) to the Outris TraceFlow & KYB backends.
 
-## High-Level Overview
+---
+
+## 1. High-Level Architecture
 
 ```mermaid
 graph TD
-    subgraph Clients "MCP Clients"
-        Claude[Claude Desktop]
-        Cursor[Cursor/Windsurf]
-        CLI[CLI Tools]
+    subgraph Clients ["AI Clients & Surfaces"]
+        WebPortal["Outris Portal Playground<br/>(/dashboard/ai-playground)"]
+        VertexAgent["Google Vertex AI<br/>Agent Builder"]
+        Claude["Claude Desktop / Windsurf"]
+        Cursor["Cursor IDE / CLI"]
     end
     
-    subgraph Transports "Transport Layer"
-        HTTP["Streamable HTTP<br/>(POST /http)"]
-        SSE["SSE Legacy<br/>(GET /sse)"]
-        STDIO["STDIO Local<br/>(--stdio)"]
+    subgraph Ingress ["Ingress & Auth Layer"]
+        JWTAuth["JWT Authenticator<br/>(Portal Sessions)"]
+        MCPKeyAuth["MCP Key Authenticator<br/>(Bearer mcp_live_...)"]
+        StackFilter["Stack & Persona Router<br/>(?stack= / X-MCP-Stack / CLI)"]
     end
     
-    subgraph Server "MCP Server"
-        MCPServer[Protocol Handler]
-        AuthModule[Authentication]
-        ToolRegistry[Tool Registry]
-        Credits[Credit System]
+    subgraph Stacks ["Modular Tool Stacks (mcp_server.core.stacks)"]
+        KYBStack["🏢 KYB & Corporate<br/>(7 tools)"]
+        UBOStack["🌳 Beneficial Ownership<br/>(5 tools)"]
+        CollStack["📞 Collections & Skip-Trace<br/>(5 tools)"]
+        FraudStack["🛡️ Fraud & Risk<br/>(6 tools)"]
+        CompStack["⚖️ Legal & AML<br/>(4 tools)"]
+        AllStack["🌐 Unified Stack<br/>(19 tools)"]
+    end
+
+    subgraph Core ["Protocol & Metering Core"]
+        Engine["Agentic Execution Engine<br/>(Claude Haiku / Vertex)"]
+        ToolReg["Tool Registry<br/>(@tool decorator)"]
+        CreditEngine["Atomic Credit Ledger<br/>(deduct_credits)"]
+        AuditLogger["Audit & Observability<br/>(ai_chat_log & user_tool_calls)"]
     end
     
-    subgraph Backend "Backend APIs"
-        OutrisAPI[Outris Identity API]
+    subgraph Backend ["Outris Production Services"]
+        NumberLookup["TraceFlow Identity API<br/>(Phone/Enrichment)"]
+        KYBBackend["Corporate & MCA VPD API<br/>(Company/Filings/UBO)"]
+        EnforcementBackend["Unified Legal Enforcement<br/>(Court/Sanctions)"]
+        PostgresDB[("PostgreSQL DB<br/>(mcp schema)")]
     end
     
-    Claude -->|HTTP/JSON-RPC| HTTP
-    Cursor -->|HTTP/JSON-RPC| HTTP
-    Claude -->|SSE Stream| SSE
-    CLI -->|STDIO| STDIO
+    WebPortal -->|SSE Stream / POST| JWTAuth
+    VertexAgent -->|OpenAPI Tool Calls| MCPKeyAuth
+    Claude -->|Streamable HTTP / STDIO| MCPKeyAuth
+    Cursor -->|Streamable HTTP / STDIO| MCPKeyAuth
+
+    JWTAuth --> StackFilter
+    MCPKeyAuth --> StackFilter
+
+    StackFilter --> KYBStack
+    StackFilter --> UBOStack
+    StackFilter --> CollStack
+    StackFilter --> FraudStack
+    StackFilter --> CompStack
+    StackFilter --> AllStack
+
+    Stacks --> Engine
+    Engine --> ToolReg
+    ToolReg --> CreditEngine
+    ToolReg --> AuditLogger
     
-    HTTP --> MCPServer
-    SSE --> MCPServer
-    STDIO --> MCPServer
+    AuditLogger --> PostgresDB
+    CreditEngine --> PostgresDB
     
-    MCPServer -->|Auth| AuthModule
-    MCPServer -->|Execute| ToolRegistry
-    AuthModule -->|Validate| OutrisAPI
-    ToolRegistry -->|API Call| OutrisAPI
-    MCPServer -->|Track| Credits
-    
-    style HTTP fill:#90EE90
-    style STDIO fill:#87CEEB
-    style SSE fill:#FFD700
+    ToolReg --> NumberLookup
+    ToolReg --> KYBBackend
+    ToolReg --> EnforcementBackend
 ```
 
-## Components
+---
 
-### 1. Transport Layer (Multiple Implementations)
+## 2. Core Architectural Pillars
 
-#### **Streamable HTTP** (`server_streamable.py`) - PRIMARY
-- Built on **FastAPI** (modern, stateless)
-- Implements new MCP specification standard
-- Each request is independent (no connection affinity)
-- Better for load-balanced, cloud deployments
-- Endpoints:
-  - `POST /http` - JSON-RPC requests (authentication optional)
-  - `GET /health` - Health check (no auth)
-  - `GET /tools` - List available tools (no auth)
-  - `GET /` - Server info
+### 2.1 Modular Stacks Engine (`mcp_server/core/stacks.py`)
+To prevent LLM cognitive overload and stay well within cloud agent schema boundaries, the registry is partitioned into targeted stacks:
+- **`kyb`**: Company resolution, MCA VPD filings, UBO tree, GSTIN, PAN, bank verification, court enforcement.
+- **`ubo`**: Beneficial ownership unwinding, corporate resolution, filings, GSTIN intelligence, court enforcement.
+- **`collections`**: Collections investigation orchestrator, alternate phones, addresses, contacts, full identity profile.
+- **`fraud`**: Fraud risk scoring, phone intelligence, social footprint, digital commerce, breach monitoring.
+- **`compliance`**: Unified legal enforcement, sanction screening, PAN, bank account verification.
+- **`all`**: Complete registry with optional persona-based filtering.
 
-#### **SSE** (`server_sse.py`) - LEGACY
-- Built on **FastAPI** and **sse-starlette**
-- Backward compatibility for existing clients
-- Maintains persistent connection
-- Endpoints:
-  - `GET /sse` - Server-Sent Events stream (authentication required)
+Stack routing is activated via:
+- **CLI Flag:** `python -m mcp_server --stdio --stack kyb`
+- **Query Parameter:** `POST /http?stack=kyb` or `GET /sse?stack=collections`
+- **HTTP Header:** `X-MCP-Stack: ubo`
 
-#### **STDIO** (`__main__.py`) - LOCAL
-- Uses official `mcp.server.stdio` module
-- Perfect for local CLI execution
-- Direct pipe connection (no HTTP overhead)
-- Enabled via: `python -m mcp_server --stdio`
+### 2.2 Client Auditing & Ledger Metering (`mcp_server/core/credits.py` & `chat_routes.py`)
+TraceFlow MCP maintains strict multi-tenant accountability:
+1. **`mcp.ai_chat_log`**: Logs every AI query turn, user email, model, input/output token counts, tools invoked, credit spend, and latency.
+2. **`mcp.user_tool_calls`**: Atomic execution log recording every tool invocation, request UUID, duration, parameters, and outcome.
+3. **Credit Ledger**: Deductions are applied via atomic database row-locks (`SELECT ... FOR UPDATE`) to prevent race conditions during parallel tool calls.
 
-### 2. Protocol Layer (`mcp_server.py`)
-- Uses the official `mcp` Python SDK v1.0+
-- Implements `OutrisMCPServer` class
-- Manages tool listing and execution requests
-- Handles guest mode vs. authenticated mode logic
-- Protocol: JSON-RPC 2.0
+### 2.3 OpenAPI Generator for Agent Builders (`scripts/generate_openapi.py`)
+Automatically compiles the tool definitions into 7 modular OpenAPI 3.0 specification files for integration into **Google Cloud Vertex AI Agent Builder**, Claude Desktop, or custom OpenAI-compatible agent frameworks.
 
-### 3. Core Modules (`core/`)
-- **Auth**: Validates API keys against the database via Authorization header
-- **Credits**: Manages atomic credit deduction and transaction logging
-- **Database**: Async PostgreSQL connection pool (Neon compatible)
-- **Config**: Environment-based configuration (Pydantic)
+---
 
-### 4. Tool Registry (`tools/`)
-- Decorator-based registration system (`@tool`)
-- Supports categorization and dynamic enabling/disabling
-- Auto-generates MCP tool schemas (inputSchema, description)
-- 8 tools total:
-  - `get_name` - Find linked names for phone/email
-  - `get_email` - Find linked emails for phone
-  - `get_address` - Find linked addresses
-  - `get_alternate_phones` - Find alternate phone numbers
-  - `get_identity_profile` - Complete identity profile
-  - `check_online_platforms` - Check social media registrations
-  - `check_digital_commerce_activity` - Check e-commerce activity
-  - `check_breaches` - Detect data breaches
+## 3. Transports Supported
 
-## Transport Layer Comparison
+| Transport | Protocol | Endpoint / Command | Target Environments |
+| :--- | :--- | :--- | :--- |
+| **Streamable HTTP** *(Primary)* | Stateless HTTP POST | `POST /http`<br/>`GET /tools` | Cloud Run, Docker, Kubernetes, Web Portals |
+| **SSE** *(Legacy)* | Server-Sent Events | `GET /sse` | Legacy agent platforms requiring long-lived streams |
+| **STDIO** | Standard I/O Pipes | `python -m mcp_server --stdio` | Claude Desktop, Windsurf, Cursor local process |
+| **AI Chat Streaming** | Progressive SSE | `POST /api/ai-chat/stream`<br/>`POST /api/ai-chat/vertex-agent` | Outris Web Portal AI Playground |
 
-| Feature | Streamable HTTP | SSE | STDIO |
-|---------|---|---|---|
-| **Protocol** | HTTP POST (stateless) | Server-Sent Events | Standard I/O pipes |
-| **Use Case** | Cloud, web servers | Legacy, persistent | Local CLI tools |
-| **Status** | ✅ PRIMARY (new MCP spec) | ⚠️ LEGACY | 🟢 NATIVE |
-| **Scalability** | ⭐⭐⭐⭐⭐ High | ⭐⭐⭐ Medium | ⭐⭐⭐ Medium |
-| **Load Balancing** | ✅ Easy | ❌ Requires sticky sessions | ✅ Yes (local) |
-| **Connection Overhead** | Low (per-request) | High (persistent) | None |
-| **Typical Clients** | Streaming API, web | Claude older, proxies | Local CLI |
+---
 
-## Deployment Modes
+## 4. Security & Isolation
 
-### Mode 1: HTTP Server (Cloud Deployment)
-```bash
-# Railway / Docker deployment
-python -m mcp_server --http
-# Exposes:
-#   - POST /http (Streamable HTTP)
-#   - GET /sse (SSE legacy)
-#   - GET /health
-#   - GET /tools
-# URL: https://mcp-server.outris.com/http
-```
-
-### Mode 2: STDIO (Local Installation)
-```bash
-# Local CLI / pip package
-python -m mcp_server --stdio
-# Perfect for: npm install -g outris-identity-mcp
-```
-
-### Mode 3: Auto-detect (Smart Default)
-```bash
-# Automatically choose based on environment
-python -m mcp_server
-# If TTY: runs HTTP mode
-# If non-TTY stdin: runs STDIO mode
-```
-
-## Security
-
-- **secrets**: No secrets stored in code. Environment variables used for all credentials.
-- **Authentication**: Bearer token (API Key) validation required for most tools
-  - Header: `Authorization: Bearer <api_key>`
-  - Demo tools (platform_check, check_whatsapp) available without auth
-- **Rate Limiting**: Per-API-key rate limits enforced by auth layer
-- **Credit System**: Tools consume credits from account balance
-- **Isolation**: Tools run within server process but make external API calls; no direct database access from tools
-- **Encryption**: PostgreSQL connection uses SSL (Neon required)
+1. **Secret Storage**: No credentials or tokens hardcoded in the codebase. Managed via environment variables and GCP Secret Manager.
+2. **Multi-Tenant Key Hashing**: MCP keys are hashed with SHA-256 before storage in `mcp.user_accounts`.
+3. **Data Boundary**: Tools never communicate directly with internal databases. All operations go through authenticated Outris APIs.
+4. **Leak Prevention**: Downstream vendor identities and raw provider schemas are completely abstracted from tool definitions and LLM contexts.
