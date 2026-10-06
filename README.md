@@ -69,32 +69,47 @@ docker run -e OUTRIS_API_KEY="your_key" -p 8000:8000 outris-identity
 
 See [SETUP.md](SETUP.md) for detailed configuration instructions.
 
-## Available Tools
+## Available Tools & Modular Stacks
 
-A small, curated set of **intent tools** — one per common identity/KYC journey —
-instead of a flat list of ~100 endpoints. See [TOOLS.md](TOOLS.md) for details.
+A curated set of **intent tools** — one per common identity/KYC/compliance journey — instead of a flat list of hundreds of raw endpoints. See [TOOLS.md](TOOLS.md) for details.
 
-| Tool | Credits | Use Case |
-|------|---------|----------|
-| **investigate_phone** | 3 | Who is behind a mobile — names, addresses, alt-phones, footprint (`depth` basic/full) |
-| **assess_fraud_risk** | 3 | Composite fraud-risk profile for a phone |
-| **find_contacts** | 3 | Skip-trace alt phones + geocoded addresses (consent token) |
-| **due_diligence_person_start** / **check_job** | 5 / 0 | Async background check — PEP/sanctions/enforcement/adverse media (consent, premium, 40–70s → poll) |
-| **investigate_email** | 2 | Trace the person behind an email |
-| **resolve_company** | 3 | Company name → CIN + GSTIN/MSME |
-| **lookup_gst** | 2 | GST registration details from a GSTIN |
-| **verify_pan** | 2 | Verify a PAN, return holder details |
-| **lookup_vehicle** | 2 | Vehicle + registered owner from an RC number |
-| **verify_bank_account** | 2 | No-debit bank-account validation (no money moved) |
-| **smart_lookup** | 3 | Long-tail router — NL question + any identifier → the right lookup/sequence |
+### Modular Stacks
+You can launch or query a focused MCP surface tailored strictly for your product domain:
+- **`kyb` (7 tools):** MCA VPD filings (AOC-4/MGT-7), UBO, GSTIN, PAN, Bank account validation, 58-body regulatory enforcement.
+- **`ubo` (5 tools):** Beneficial ownership tree unravelling, regulatory sanctions, company profile, person due-diligence.
+- **`collections` (6 tools):** Collections phone bundle, consent-gated alternate contacts/addresses, vehicle RC, caller ID.
+- **`fraud` (5 tools):** Carrier SIM telemetry (age/swap/port), phone/email investigation, digital footprint.
+- **`compliance` (6 tools):** Unified enforcement (SEBI/MCA/IBBI/CBI), UBO, PEP/sanctions, law enforcement dossiers.
 
-## Transports
+| Tool | Credits | Category | Use Case |
+|------|---------|----------|----------|
+| **investigate_phone** | 3 | phone | Identity bundle behind a mobile — names, addresses, alt-phones (`depth` basic/full) |
+| **assess_fraud_risk** | 3 | phone | Composite carrier fraud-risk profile (SIM age, swap, port, risk exposure) |
+| **find_contacts** | 3 | phone | Skip-trace alt phones + geocoded addresses (consent token required) |
+| **due_diligence_person_start** / **check_job** | 5 / 0 | screening | Full background check — PEP/sanctions/enforcement/adverse media (consent, async 40–70s) |
+| **investigate_email** | 2 | email | Trace the person behind an email (names, phones, breaches) |
+| **resolve_company** | 3 | business | Company name → CIN + GSTIN/MSME registrations |
+| **fetch_company_filings** | 3 | business | MCA VPD filings: AOC-4 balance sheet, MGT-7 annual return, P&L, charges |
+| **lookup_beneficial_ownership** | 5 | compliance | Ultimate Beneficial Ownership (UBO) unravelling >=10% natural persons |
+| **lookup_gst** | 2 | business | GST registration details from a GSTIN |
+| **verify_pan** | 2 | identity | Verify PAN and return legal name/status/type |
+| **lookup_vehicle** | 2 | vehicle | Vehicle + registered owner from an RC number |
+| **verify_bank_account** | 2 | banking | Pennyless bank-account validation via NPCI (no money moved) |
+| **run_collections_intelligence** | 3 | collections | Macro debt-recovery phone intelligence bundle |
+| **run_law_enforcement_intel** | 5 | law_enforcement | Law Enforcement Intelligence (LEI) privileged dossier |
+| **check_caller_id** | 2 | identity | Multi-app caller ID aggregation (tags, names, emails) |
+| **search_unified_enforcement** | 5 | business | Screen across 58 regulatory bodies (SEBI, MCA, IBBI, CBI, SFIO) |
+| **run_digital_footprint** | 3 | osint | Deep digital footprint mapping web presence & breach exposures |
+| **smart_lookup** | 3 | router | Long-tail router — NL question + any identifier → the right lookup/sequence |
 
-| Transport | URL | Use Case | Status |
-|-----------|-----|----------|--------|
-| **Streamable HTTP** | `POST /http` | Cloud, Claude Desktop | ✅ PRIMARY |
-| **SSE** | `GET /sse` | Legacy clients, proxies | ⚠️ Supported |
-| **STDIO** | `python -m mcp_server` | Local CLI, direct integration | 🟢 Native |
+## Transports & Stack Launch
+
+| Transport | Endpoint / Command | Modular Stack Support |
+|-----------|--------------------|-----------------------|
+| **Streamable HTTP** | `POST /http` or `POST /stacks/{stack}/http` | Query `?stack=kyb` or path `/stacks/kyb/http` |
+| **SSE** | `GET /sse` or `GET /stacks/{stack}/sse` | Query `?stack=ubo` or path `/stacks/ubo/sse` |
+| **STDIO (CLI)** | `python -m mcp_server --stdio` | Flag `--stack kyb` or `--stack ubo` |
+| **Vertex AI Agent Builder** | `GET /api/vertex-agent/openapi.json` | Query `?stack=kyb` or `vertex_openapi_kyb.json` |
 
 ## Documentation
 

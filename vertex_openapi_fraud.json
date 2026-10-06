@@ -1,0 +1,275 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Outris TraceFlow MCP \u2022 Fraud & Risk Intelligence Stack",
+    "description": "Carrier SIM swap/port telemetry, phone ownership risk, email footprint & data breaches, caller-ID aggregation, and digital footprint analysis.",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://mcp-server.outris.com",
+      "description": "Production Server"
+    }
+  ],
+  "paths": {
+    "/api/vertex-agent/investigate_phone": {
+      "post": {
+        "summary": "investigate_phone",
+        "description": "Investigate an Indian mobile number and return who is behind it \u2014 name(s), addresses, alternate phone numbers, and social/digital footprint. Use depth='basic' for a fast identity bundle (default) or depth='full' for a comprehensive multi-source investigation (slower). Best for: 'who owns this number', caller ID, KYC, skip-tracing.",
+        "operationId": "investigate_phone",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "depth": {
+                    "type": "string",
+                    "description": "basic = fast identity bundle (default); full = comprehensive investigation (slower)."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/assess_fraud_risk": {
+      "post": {
+        "summary": "assess_fraud_risk",
+        "description": "Assess the fraud risk of an Indian mobile number. Returns a composite risk profile: SIM age / age-on-network, number revocation status, SIM-swap / port signals, and digital & financial exposure. Set detailed=true for the full signal breakdown. Best for: onboarding risk checks, is-this-number-risky.",
+        "operationId": "assess_fraud_risk",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "detailed": {
+                    "type": "boolean",
+                    "description": "Include the full raw signal breakdown. Default false."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/investigate_email": {
+      "post": {
+        "summary": "investigate_email",
+        "description": "Trace the person behind an email address \u2014 linked names, phone numbers, addresses, and known data breaches. Best for: reverse email lookup, digital footprint, cross-referencing an identity.",
+        "operationId": "investigate_email",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "description": "Email address to investigate."
+                  }
+                },
+                "required": [
+                  "email"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/check_caller_id": {
+      "post": {
+        "summary": "check_caller_id",
+        "description": "Aggregate a phone number's caller-identity across multiple consumer caller-ID apps. Returns saved-as names, associated emails, and social handles. Requires DPDPA consent.",
+        "operationId": "check_caller_id",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/run_digital_footprint": {
+      "post": {
+        "summary": "run_digital_footprint",
+        "description": "Deep digital footprint analysis mapping an entity's online presence, associated web links, breaches, and public risk indicators.",
+        "operationId": "run_digital_footprint",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "description": "Email, phone, or name to analyze"
+                  }
+                },
+                "required": [
+                  "query"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    }
+  },
+  "components": {}
+}

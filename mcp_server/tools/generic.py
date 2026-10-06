@@ -45,6 +45,7 @@ async def execute_endpoint(
     path: str,
     *,
     params: Optional[dict] = None,
+    query: Optional[dict] = None,
     body: Optional[dict] = None,
     consent: Optional[str] = None,
     consent_token: Optional[str] = None,
@@ -106,7 +107,8 @@ async def execute_endpoint(
 
     # 4. Backend call — call_backend supplier-scrubs the payload AND raises a
     #    typed, scrubbed BackendError on failure (never leaks upstream text).
-    response = await call_backend(path, method=method, params=params, json_data=body)
+    effective_params = params or query
+    response = await call_backend(path, method=method, params=effective_params, json_data=body)
 
     # 5. Default-deny PII mask (value-shape first, robust to unknown shapes).
     masked = mask_pii(response, allow_raw=allow_raw)

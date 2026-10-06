@@ -61,78 +61,97 @@ logger.info("Registered Tier-1 intent tools + demo playground tools")
 
 
 class OutrisMCPServer:
-    """Outris MCP Server with authentication and credits."""
+    """Outris MCP Server with authentication, credits, and modular stack support."""
 
-    def __init__(self):
+    def __init__(self, stack: str | None = None, persona: str | None = None):
         self.server = Server("outris-mcp-server")
         self.current_account: MCPAccount | None = None
+        self.stack = stack or get_settings().mcp_stack or None
+        self.default_persona = persona or get_settings().mcp_persona or None
         self._setup_handlers()
+
+    async def list_available_tools(self) -> list[Tool]:
+        """Return available tools based on authentication, stack, and persona."""
+        tools = []
+
+        # If not authenticated, return limited demo tools
+        if self.current_account is None:
+            logger.info(f"Guest request - returning demo tools (stack={self.stack})")
+            demo_tools = ["platform_check", "check_whatsapp"]
+
+            matching = ToolRegistry.get_for_stack_and_persona(stack=self.stack)
+            for name, tool_def in matching.items():
+                if name in demo_tools:
+                    tools.append(Tool(
+                        name=name,
+                        description=f"[DEMO] {tool_def.description}",
+                        inputSchema={
+                            "type": "object",
+                            "properties": tool_def.parameters,
+                            "required": [
+                                k for k, v in tool_def.parameters.items()
+                                if v.get("required", False)
+                            ]
+                        }
+                    ))
+
+            # Add info tool
+            tools.append(Tool(
+                name="get_full_access",
+                description="Learn how to unlock all investigation tools",
+                inputSchema={"type": "object", "properties": {}}
+            ))
+
+            return tools
+
+        # Authenticated - return enabled tools matching the user's persona and stack
+        user_persona = (
+            self.default_persona
+            or (self.current_account.persona if hasattr(self.current_account, "persona") else "general")
+        )
+        
+        matching = ToolRegistry.get_for_stack_and_persona(
+            stack=self.stack,
+            persona=user_persona,
+        )
+
+        for name, tool_def in matching.items():
+            tools.append(Tool(
+                name=name,
+                description=tool_def.description,
+                inputSchema={
+                    "type": "object",
+                    "properties": tool_def.parameters,
+                    "required": [
+                        k for k, v in tool_def.parameters.items()
+                        if v.get("required", False)
+                    ]
+                }
+            ))
+
+        logger.info(f"Returning {len(tools)} tools (stack={self.stack}, persona={user_persona}, auth=True)")
+        return tools
 
     def _setup_handlers(self):
         """Setup MCP protocol handlers."""
 
         @self.server.list_tools()
         async def list_tools() -> list[Tool]:
-            """Return available tools based on authentication."""
-            tools = []
-
-            # If not authenticated, return limited demo tools
-            if self.current_account is None:
-                logger.info("Guest request - returning demo tools only")
-                demo_tools = ["platform_check", "check_whatsapp"]
-
-                for name, tool_def in ToolRegistry.get_enabled().items():
-                    if name in demo_tools:
-                        tools.append(Tool(
-                            name=name,
-                            description=f"[DEMO] {tool_def.description}",
-                            inputSchema={
-                                "type": "object",
-                                "properties": tool_def.parameters,
-                                "required": [
-                                    k for k, v in tool_def.parameters.items()
-                                    if v.get("required", False)
-                                ]
-                            }
-                        ))
-
-                # Add info tool
-                tools.append(Tool(
-                    name="get_full_access",
-                    description="Learn how to unlock all investigation tools",
-                    inputSchema={"type": "object", "properties": {}}
-                ))
-
-                return tools
-
-            # Authenticated - return enabled tools matching the user's persona
-            user_persona = self.current_account.persona if hasattr(self.current_account, "persona") else "general"
-            
-            for name, tool_def in ToolRegistry.get_enabled().items():
-                # Filter by persona if the tool defines allowed_personas
-                if tool_def.allowed_personas and user_persona not in tool_def.allowed_personas:
-                    continue
-                    
-                tools.append(Tool(
-                    name=name,
-                    description=tool_def.description,
-                    inputSchema={
-                        "type": "object",
-                        "properties": tool_def.parameters,
-                        "required": [
-                            k for k, v in tool_def.parameters.items()
-                            if v.get("required", False)
-                        ]
-                    }
-                ))
-
-            logger.info(f"Returning {len(tools)} tools (auth={self.current_account is not None})")
-            return tools
+            return await self.list_available_tools()
 
         @self.server.call_tool()
         async def call_tool(name: str, arguments: dict) -> Sequence[TextContent | ImageContent | EmbeddedResource]:
             """Execute a tool call."""
-            logger.info(f"Tool call: {name} (auth={self.current_account is not None})")
+            logger.info(f"Tool call: {name} (stack={self.stack}, auth={self.current_account is not None})")
+
+            # Validate tool belongs to active stack if stack is configured
+            if self.stack:
+                from .core.stacks import is_tool_in_stack
+                if not is_tool_in_stack(name, self.stack):
+                    return [TextContent(
+                        type="text",
+                        text=f"Tool '{name}' is not available in the active '{self.stack}' stack."
+                    )]
 
             # Special: get_full_access
             if name == "get_full_access":

@@ -1,0 +1,350 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Outris TraceFlow MCP \u2022 AML & Regulatory Compliance Stack",
+    "description": "Screening across 58 regulatory bodies, PEP, sanctions, UBO unravelling, and privileged law enforcement investigation dossiers.",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://mcp-server.outris.com",
+      "description": "Production Server"
+    }
+  ],
+  "paths": {
+    "/api/vertex-agent/due_diligence_person_start": {
+      "post": {
+        "summary": "due_diligence_person_start",
+        "description": "Start a full due-diligence / background check on a PERSON, anchored on their mobile number (optionally add name, PAN, DOB, email, city). Covers PEP, sanctions, enforcement, cybercrime, breaches, directorships, and adverse media. PREMIUM and ASYNC (~40-70s): it returns a job_id \u2014 poll check_job until status is 'complete'. Requires consent: ask the user to open the consent link in portal.outris.com/mcp and pass the consent_token.",
+        "operationId": "due_diligence_person_start",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "consent_token": {
+                    "type": "string",
+                    "description": "Server-issued consent token (preferred)."
+                  },
+                  "consent": {
+                    "type": "string",
+                    "description": "Deprecated legacy consent flag ('Y'); migration only."
+                  },
+                  "name": {
+                    "type": "string",
+                    "description": "Optional subject full name."
+                  },
+                  "pan": {
+                    "type": "string",
+                    "description": "Optional PAN \u2014 strongest key for PEP/enforcement."
+                  },
+                  "dob": {
+                    "type": "string",
+                    "description": "Optional date of birth (disambiguates common names)."
+                  },
+                  "email": {
+                    "type": "string",
+                    "description": "Optional subject email."
+                  },
+                  "city": {
+                    "type": "string",
+                    "description": "Optional city (adverse-media disambiguation)."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/check_job": {
+      "post": {
+        "summary": "check_job",
+        "description": "Check the status/result of an async job by job_id (e.g. from due_diligence_person_start). Free to poll \u2014 wait ~10s between polls.",
+        "operationId": "check_job",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "job_id": {
+                    "type": "string",
+                    "description": "The job_id returned by an async tool."
+                  }
+                },
+                "required": [
+                  "job_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/verify_pan": {
+      "post": {
+        "summary": "verify_pan",
+        "description": "Verify an Indian PAN (Permanent Account Number) and return the holder's name, status, and PAN type (individual / company / etc.). Best for: KYC, PAN validity checks.",
+        "operationId": "verify_pan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pan": {
+                    "type": "string",
+                    "description": "10-character PAN (e.g. ABCDE1234F)."
+                  }
+                },
+                "required": [
+                  "pan"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/run_law_enforcement_intel": {
+      "post": {
+        "summary": "run_law_enforcement_intel",
+        "description": "Law Enforcement Intelligence (LEI) endpoint. Highly-privileged macro-orchestrator combining collections data, prefill identity, and caller ID aggregation for a comprehensive subject profile.",
+        "operationId": "run_law_enforcement_intel",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "reason": {
+                    "type": "string",
+                    "description": "Justification or case ID for the LEI inquiry"
+                  }
+                },
+                "required": [
+                  "phone",
+                  "reason"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/search_unified_enforcement": {
+      "post": {
+        "summary": "search_unified_enforcement",
+        "description": "Query the unified enforcement corpus (58 regulatory sources, 1.3M+ records) by identifier. Searches for legal actions, severe compliance failures, or negative regulatory actions against an entity.",
+        "operationId": "search_unified_enforcement",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string",
+                    "description": "Any valid business identifier: CIN, PAN, DIN, GSTIN, IEC, or full Company Name."
+                  }
+                },
+                "required": [
+                  "identifier"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/lookup_beneficial_ownership": {
+      "post": {
+        "summary": "lookup_beneficial_ownership",
+        "description": "Ultimate Beneficial Ownership (UBO) screen. Unravels multi-tier holding company trees to identify natural persons holding >=10% economic interest or ultimate managerial control under RBI/PMLA guidelines. Returns ownership paths, percentages, and control tiers.",
+        "operationId": "lookup_beneficial_ownership",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string",
+                    "description": "CIN, PAN, or registered Company Name."
+                  }
+                },
+                "required": [
+                  "identifier"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    }
+  },
+  "components": {}
+}

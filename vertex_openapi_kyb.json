@@ -1,0 +1,376 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Outris TraceFlow MCP \u2022 KYB & Corporate Verification Stack",
+    "description": "Company resolution, official MCA VPD filings (AOC-4 / MGT-7), beneficial ownership (UBO), GSTIN registration, business PAN, bank verification, and regulatory enforcement screening.",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://mcp-server.outris.com",
+      "description": "Production Server"
+    }
+  ],
+  "paths": {
+    "/api/vertex-agent/resolve_company": {
+      "post": {
+        "summary": "resolve_company",
+        "description": "Resolve an Indian company from its NAME and return its CIN (Corporate Identification Number) plus any GSTIN / MSME registrations discovered along the way. Best for: 'is this a real company', KYB entry point, finding a CIN from a company name.",
+        "operationId": "resolve_company",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "company_name": {
+                    "type": "string",
+                    "description": "Company name to resolve."
+                  }
+                },
+                "required": [
+                  "company_name"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/lookup_gst": {
+      "post": {
+        "summary": "lookup_gst",
+        "description": "Look up GST registration details for a business by its GSTIN (15-character GST number). Returns legal/trade name, status, registration type, and address. Best for: GST verification, vendor onboarding.",
+        "operationId": "lookup_gst",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "gstin": {
+                    "type": "string",
+                    "description": "15-character GSTIN."
+                  }
+                },
+                "required": [
+                  "gstin"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/verify_pan": {
+      "post": {
+        "summary": "verify_pan",
+        "description": "Verify an Indian PAN (Permanent Account Number) and return the holder's name, status, and PAN type (individual / company / etc.). Best for: KYC, PAN validity checks.",
+        "operationId": "verify_pan",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "pan": {
+                    "type": "string",
+                    "description": "10-character PAN (e.g. ABCDE1234F)."
+                  }
+                },
+                "required": [
+                  "pan"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/verify_bank_account": {
+      "post": {
+        "summary": "verify_bank_account",
+        "description": "Validate an Indian bank account WITHOUT moving any money (no-debit NPCI validation) and return whether it is valid plus the account holder's name for matching. Best for: payout/beneficiary verification. This does NOT transfer funds.",
+        "operationId": "verify_bank_account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "account_number": {
+                    "type": "string",
+                    "description": "Bank account number to validate."
+                  },
+                  "ifsc": {
+                    "type": "string",
+                    "description": "IFSC code of the account's branch."
+                  }
+                },
+                "required": [
+                  "account_number",
+                  "ifsc"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/search_unified_enforcement": {
+      "post": {
+        "summary": "search_unified_enforcement",
+        "description": "Query the unified enforcement corpus (58 regulatory sources, 1.3M+ records) by identifier. Searches for legal actions, severe compliance failures, or negative regulatory actions against an entity.",
+        "operationId": "search_unified_enforcement",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string",
+                    "description": "Any valid business identifier: CIN, PAN, DIN, GSTIN, IEC, or full Company Name."
+                  }
+                },
+                "required": [
+                  "identifier"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/fetch_company_filings": {
+      "post": {
+        "summary": "fetch_company_filings",
+        "description": "Request the official MCA View-Public-Documents (VPD) pack for an unlisted or private Indian company. Delivers official balance sheets (AOC-4), annual returns (MGT-7), P&L, charges, and incorporation filings. Fulfilment is asynchronous and operator-assisted. You can optionally pass a callback_url to be notified via webhook when filings are ready.",
+        "operationId": "fetch_company_filings",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "cin": {
+                    "type": "string",
+                    "description": "21-character Corporate Identification Number (CIN), LLPIN, or FCRN."
+                  },
+                  "callback_url": {
+                    "type": "string",
+                    "description": "Optional HTTPS URL to receive webhook push when documents are ready."
+                  }
+                },
+                "required": [
+                  "cin"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/lookup_beneficial_ownership": {
+      "post": {
+        "summary": "lookup_beneficial_ownership",
+        "description": "Ultimate Beneficial Ownership (UBO) screen. Unravels multi-tier holding company trees to identify natural persons holding >=10% economic interest or ultimate managerial control under RBI/PMLA guidelines. Returns ownership paths, percentages, and control tiers.",
+        "operationId": "lookup_beneficial_ownership",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "identifier": {
+                    "type": "string",
+                    "description": "CIN, PAN, or registered Company Name."
+                  }
+                },
+                "required": [
+                  "identifier"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    }
+  },
+  "components": {}
+}

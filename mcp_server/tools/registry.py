@@ -74,25 +74,51 @@ class ToolRegistry:
         return {k: v for k, v in cls._tools.items() if v.enabled}
     
     @classmethod
-    def to_mcp_format(cls) -> list[dict]:
-        """Convert all tools to MCP protocol format."""
+    def get_for_stack_and_persona(
+        cls,
+        stack: Optional[str] = None,
+        persona: Optional[str] = None,
+    ) -> dict[str, ToolDefinition]:
+        """Return filtered dict of tools matching the given stack and persona."""
+        from ..core.stacks import get_stack_tools
+        stack_tools = get_stack_tools(stack)
+        
+        filtered = {}
+        for name, tool_def in cls.get_enabled().items():
+            # If stack specified, only include tools belonging to this stack
+            if stack_tools is not None and name not in stack_tools:
+                continue
+            # If persona specified, filter by allowed_personas
+            if persona and tool_def.allowed_personas and persona not in tool_def.allowed_personas:
+                continue
+            filtered[name] = tool_def
+        return filtered
+
+    @classmethod
+    def to_mcp_format(
+        cls,
+        stack: Optional[str] = None,
+        persona: Optional[str] = None,
+    ) -> list[dict]:
+        """Convert tools matching stack and persona to MCP protocol format."""
         tools = []
-        for name, tool in cls.get_enabled().items():
+        matching = cls.get_for_stack_and_persona(stack=stack, persona=persona)
+        for name, tool_def in matching.items():
             # Build properties dict without 'required' key (invalid in JSON Schema properties)
             clean_properties = {}
-            for param_name, param_def in tool.parameters.items():
+            for param_name, param_def in tool_def.parameters.items():
                 clean_properties[param_name] = {
                     k: v for k, v in param_def.items() if k != "required"
                 }
 
             tools.append({
                 "name": name,
-                "description": tool.description,
+                "description": tool_def.description,
                 "inputSchema": {
                     "type": "object",
                     "properties": clean_properties,
                     "required": [
-                        k for k, v in tool.parameters.items() 
+                        k for k, v in tool_def.parameters.items() 
                         if v.get("required", False)
                     ]
                 }

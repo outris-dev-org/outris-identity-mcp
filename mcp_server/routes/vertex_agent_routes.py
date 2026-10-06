@@ -83,14 +83,27 @@ async def execute_vertex_tool(tool_name: str, request: Request):
         raise HTTPException(status_code=status_code, detail=client_message)
 
 @router.get("/openapi.json")
-async def get_vertex_openapi():
-    """Return the generated OpenAPI spec for Agent Builder."""
+async def get_vertex_openapi(stack: str | None = None):
+    """Return the generated OpenAPI spec for Agent Builder, optionally filtered by stack."""
     import json
     import os
     
-    spec_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "vertex_openapi.json")
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    filename = f"vertex_openapi_{stack.strip().lower()}.json" if stack else "vertex_openapi.json"
+    spec_path = os.path.join(base_dir, filename)
+    
+    if not os.path.exists(spec_path):
+        # Fall back to default full spec if specific stack file not pre-generated
+        spec_path = os.path.join(base_dir, "vertex_openapi.json")
+        
     try:
         with open(spec_path, "r") as f:
             return json.load(f)
     except Exception:
         raise HTTPException(status_code=500, detail="OpenAPI spec not generated yet.")
+
+
+@router.get("/stacks/{stack_name}/openapi.json")
+async def get_vertex_stack_openapi(stack_name: str):
+    """Return the OpenAPI spec for a specific stack (e.g. kyb, ubo)."""
+    return await get_vertex_openapi(stack=stack_name)

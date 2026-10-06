@@ -143,6 +143,15 @@ CAPABILITIES: List[Capability] = [
     Capability("company_directors", "Directors / board of a company by CIN",
                ("cin",), "GET", "/api/kyb/company/cin/{cin}/directors",
                keywords=("directors", "board", "owners", "who runs")),
+    Capability("company_vpd_documents", "Request official MCA View-Public-Documents (VPD) pack for private/unlisted company (AOC-4 / MGT-7)",
+               ("cin",), "POST", "/api/kyb/company/cin/{cin}/documents", beta=True,
+               keywords=("mca", "vpd", "documents", "filings", "balance sheet", "aoc4", "mgt7", "financials")),
+    Capability("ubo_screening", "Ultimate Beneficial Ownership (UBO) tree and multi-tier corporate shareholding",
+               ("cin",), "GET", "/api/kyb/ubo/{cin}", beta=True,
+               keywords=("ubo", "beneficial ownership", "holding", "shareholder", "control")),
+    Capability("kyb_enforcement", "Screen an entity against 58 regulatory bodies (SEBI, MCA, IBBI, CBI, SFIO)",
+               ("cin",), "GET", "/api/kyb/enforcement", beta=True,
+               keywords=("enforcement", "defaulter", "sanctions", "court", "regulatory", "litigation")),
 
     # ---- RC-keyed ----
     Capability("rc_to_mobile", "Find the registered owner's mobile for a vehicle RC",

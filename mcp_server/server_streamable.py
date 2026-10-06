@@ -159,10 +159,17 @@ async def health():
 
 
 @app.get("/tools")
-async def list_tools():
-    """List available tools - no auth required (public discovery)."""
+async def list_tools(stack: str | None = None, persona: str | None = None):
+    """List available tools - no auth required (public discovery). Optional ?stack=kyb or ?persona=underwriter."""
+    effective_stack = stack or settings.mcp_stack or None
+    effective_persona = persona or settings.mcp_persona or None
+    matching = (
+        ToolRegistry.get_for_stack_and_persona(stack=effective_stack, persona=effective_persona)
+        if (effective_stack or effective_persona)
+        else ToolRegistry.get_all()
+    )
     tools = {}
-    for name, tool_def in ToolRegistry.get_all().items():
+    for name, tool_def in matching.items():
         tools[name] = {
             "description": tool_def.description,
             "credits": tool_def.credits,
@@ -170,10 +177,49 @@ async def list_tools():
             "requires_auth": name not in ["platform_check", "check_whatsapp"]
         }
     return {
+        "stack": effective_stack or "full",
+        "persona": effective_persona or "all",
         "total": len(tools),
         "tools": tools,
         "public_tools": ["platform_check", "check_whatsapp"],
         "note": "Use /http or /sse for tool execution"
+    }
+
+
+@app.get("/stacks")
+async def list_available_stacks():
+    """List all available modular tool stacks."""
+    from .core.stacks import list_stacks
+    return {
+        "status": "success",
+        "stacks": list_stacks()
+    }
+
+
+@app.get("/stacks/{stack_name}/tools")
+async def list_stack_tools(stack_name: str, persona: str | None = None):
+    """List tools belonging to a specific modular stack (e.g. kyb, ubo)."""
+    from .core.stacks import get_stack
+    stack_def = get_stack(stack_name)
+    if not stack_def:
+        raise HTTPException(status_code=404, detail=f"Stack '{stack_name}' not found.")
+    
+    matching = ToolRegistry.get_for_stack_and_persona(stack=stack_name, persona=persona)
+    tools = {}
+    for name, tool_def in matching.items():
+        tools[name] = {
+            "description": tool_def.description,
+            "credits": tool_def.credits,
+            "category": tool_def.category,
+            "requires_auth": name not in ["platform_check", "check_whatsapp"]
+        }
+    return {
+        "stack": stack_name,
+        "title": stack_def["title"],
+        "description": stack_def["description"],
+        "persona": persona or "all",
+        "total": len(tools),
+        "tools": tools,
     }
 
 
@@ -196,11 +242,36 @@ async def streamable_http_discovery():
     }
 
 
+@app.post("/stacks/{stack_name}")
+@app.post("/stacks/{stack_name}/http")
+async def stack_streamable_http(stack_name: str, request: Request, authorization: str | None = Header(None)):
+    """Dedicated Streamable HTTP endpoint for a specific stack (e.g. kyb, ubo)."""
+    return await streamable_http_transport(request, authorization=authorization, stack_override=stack_name)
+
+
+@app.get("/stacks/{stack_name}/http")
+async def stack_streamable_http_discovery(stack_name: str):
+    """Discovery probe for stack-specific Streamable HTTP endpoint."""
+    from .core.stacks import get_stack
+    stack_def = get_stack(stack_name)
+    if not stack_def:
+        raise HTTPException(status_code=404, detail=f"Stack '{stack_name}' not found.")
+    return {
+        "status": "active",
+        "stack": stack_name,
+        "title": stack_def["title"],
+        "transport": "streamable-http",
+        "tools_count": len(stack_def["tools"]),
+        "message": f"Send JSON-RPC POST requests to interact with the {stack_def['title']}."
+    }
+
+
 @app.post("/")
 @app.post("/http")
 async def streamable_http_transport(
     request: Request,
-    authorization: str | None = Header(None)
+    authorization: str | None = Header(None),
+    stack_override: str | None = None,
 ):
     """
     Streamable HTTP transport endpoint (stateless).
@@ -266,14 +337,28 @@ async def streamable_http_transport(
     method = body.get("method")
     params = body.get("params", {})
 
-    logger.info(f"[HTTP] Method: {method}, ID: {request_id}")
+    effective_stack = (
+        stack_override
+        or request.query_params.get("stack")
+        or request.headers.get("X-MCP-Stack")
+        or settings.mcp_stack
+        or None
+    )
+    effective_persona = (
+        request.query_params.get("persona")
+        or request.headers.get("X-MCP-Persona")
+        or settings.mcp_persona
+        or None
+    )
+
+    logger.info(f"[HTTP] Method: {method}, ID: {request_id}, Stack: {effective_stack}, Persona: {effective_persona}")
 
     try:
         # ====================================================================
         # Method: initialize (Handshake)
         # ====================================================================
         if method == "initialize":
-            logger.info(f"[HTTP] Initialized")
+            logger.info(f"[HTTP] Initialized (stack={effective_stack})")
             return JSONResponse({
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -292,7 +377,7 @@ async def streamable_http_transport(
                         "logging": {}
                     },
                     "serverInfo": {
-                        "name": "outris-mcp-server",
+                        "name": f"outris-mcp-server{f'-{effective_stack}' if effective_stack else ''}",
                         "version": "2.0.0"
                     }
                 }
@@ -335,8 +420,8 @@ async def streamable_http_transport(
         # Method: tools/list (Public - no auth)
         # ====================================================================
         elif method == "tools/list":
-            tools = ToolRegistry.to_mcp_format()
-            logger.info(f"[HTTP] tools/list: {len(tools)} tools returned")
+            tools = ToolRegistry.to_mcp_format(stack=effective_stack, persona=effective_persona)
+            logger.info(f"[HTTP] tools/list: {len(tools)} tools returned (stack={effective_stack}, persona={effective_persona})")
             return JSONResponse({
                 "jsonrpc": "2.0",
                 "id": request_id,
@@ -356,7 +441,7 @@ async def streamable_http_transport(
                     "uri": "outris://capabilities",
                     "name": "Outris capabilities catalog",
                     "description": "Every identity/KYC lookup available and the identifier each needs. "
-                                   "Read this to discover what smart_lookup can answer.",
+                                    "Read this to discover what smart_lookup can answer.",
                     "mimeType": "application/json",
                 }]}
             })
@@ -397,6 +482,18 @@ async def streamable_http_transport(
                         "data": "Tool name required in params.name"
                     }
                 })
+
+            if effective_stack:
+                from .core.stacks import is_tool_in_stack
+                if not is_tool_in_stack(tool_name, effective_stack):
+                    return JSONResponse({
+                        "jsonrpc": "2.0",
+                        "id": request_id,
+                        "error": {
+                            "code": -32601,
+                            "message": f"Tool '{tool_name}' is not available in the active '{effective_stack}' stack."
+                        }
+                    })
 
 
             # Validate API key from header — return HTTP 401 to trigger OAuth flow
@@ -619,7 +716,11 @@ async def streamable_http_transport(
 # ============================================================================
 
 @app.get("/sse")
-async def sse_transport(request: Request, authorization: str | None = Header(None)):
+async def sse_transport(
+    request: Request,
+    authorization: str | None = Header(None),
+    stack: str | None = None,
+):
     """
     SSE transport endpoint (legacy - backward compatibility).
     
@@ -636,10 +737,11 @@ async def sse_transport(request: Request, authorization: str | None = Header(Non
             api_key = authorization.replace("Bearer ", "")
             account = await validate_api_key(api_key)
 
-        logger.info(f"SSE connection established")
+        effective_stack = stack or request.query_params.get("stack") or settings.mcp_stack or None
+        logger.info(f"SSE connection established (stack={effective_stack})")
 
         # Create MCP server instance
-        mcp_server = OutrisMCPServer()
+        mcp_server = OutrisMCPServer(stack=effective_stack)
         mcp_server.current_account = account
 
         # Create SSE transport
@@ -676,6 +778,12 @@ async def sse_transport(request: Request, authorization: str | None = Header(Non
     except Exception as e:
         logger.error(f"SSE setup error: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to establish SSE connection")
+
+
+@app.get("/stacks/{stack_name}/sse")
+async def stack_sse_transport(stack_name: str, request: Request, authorization: str | None = Header(None)):
+    """Dedicated SSE endpoint for a specific stack."""
+    return await sse_transport(request, authorization=authorization, stack=stack_name)
 
 
 # ============================================================================

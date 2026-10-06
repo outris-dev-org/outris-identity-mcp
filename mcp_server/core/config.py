@@ -71,6 +71,11 @@ class Settings(BaseSettings):
     # validate SSO billing for one/few testers without a full cutover. Empty =
     # nobody overridden.
     mcp_shadow_emails: str = ""
+
+    # Modular Stacks and Default Persona
+    # Stacks: 'kyb', 'ubo', 'collections', 'fraud', 'compliance', or None (all tools)
+    mcp_stack: str = ""
+    mcp_persona: str = ""
     
     class Config:
         env_file = ".env"

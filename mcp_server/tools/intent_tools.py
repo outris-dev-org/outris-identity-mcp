@@ -475,8 +475,71 @@ async def check_caller_id(phone: str) -> dict:
 )
 async def search_unified_enforcement(identifier: str) -> dict:
     return await execute_endpoint(
-        "GET", "/api/kyb/enforcement/search",
-        query={"q": identifier.strip()},
+        "GET", "/api/kyb/enforcement",
+        params={"q": identifier.strip()},
+    )
+
+
+@tool(
+    name="fetch_company_filings",
+    description=(
+        "Request the official MCA View-Public-Documents (VPD) pack for an "
+        "unlisted or private Indian company. Delivers official balance sheets "
+        "(AOC-4), annual returns (MGT-7), P&L, charges, and incorporation "
+        "filings. Fulfilment is asynchronous and operator-assisted. You can "
+        "optionally pass a callback_url to be notified via webhook when filings "
+        "are ready.\n\nCost: 3 credits"
+    ),
+    credits=C_HEAVY,
+    parameters={
+        "cin": {
+            "type": "string",
+            "description": "21-character Corporate Identification Number (CIN), LLPIN, or FCRN.",
+            "required": True,
+        },
+        "callback_url": {
+            "type": "string",
+            "description": "Optional HTTPS URL to receive webhook push when documents are ready.",
+            "required": False,
+        },
+    },
+    category="business",
+    allowed_personas=['underwriter', 'general', 'compliance'],
+)
+async def fetch_company_filings(cin: str, callback_url: str = None) -> dict:
+    cin_clean = cin.strip().upper()
+    body = {}
+    if callback_url:
+        body["callback_url"] = callback_url.strip()
+    return await execute_endpoint(
+        "POST", f"/api/kyb/company/cin/{cin_clean}/documents", body=body
+    )
+
+
+@tool(
+    name="lookup_beneficial_ownership",
+    description=(
+        "Ultimate Beneficial Ownership (UBO) screen. Unravels multi-tier "
+        "holding company trees to identify natural persons holding >=10% "
+        "economic interest or ultimate managerial control under RBI/PMLA "
+        "guidelines. Returns ownership paths, percentages, and control tiers.\n\n"
+        "Cost: 5 credits"
+    ),
+    credits=C_SCREEN,
+    parameters={
+        "identifier": {
+            "type": "string",
+            "description": "CIN, PAN, or registered Company Name.",
+            "required": True,
+        },
+    },
+    category="compliance",
+    allowed_personas=['compliance', 'underwriter', 'general'],
+)
+async def lookup_beneficial_ownership(identifier: str) -> dict:
+    clean_id = identifier.strip()
+    return await execute_endpoint(
+        "GET", f"/api/kyb/ubo/{clean_id}"
     )
 
 
@@ -495,3 +558,4 @@ async def run_digital_footprint(query: str) -> dict:
         "POST", "/api/digital_footprint",
         body={"query": query.strip()},
     )
+

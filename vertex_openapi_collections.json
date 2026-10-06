@@ -1,0 +1,334 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Outris TraceFlow MCP \u2022 Collections & Skip-Tracing Stack",
+    "description": "Phone intelligence, consent-gated alternate contactability & geocoded addresses, vehicle RC ownership, caller ID, and bank account validation for debt recovery.",
+    "version": "2.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://mcp-server.outris.com",
+      "description": "Production Server"
+    }
+  ],
+  "paths": {
+    "/api/vertex-agent/investigate_phone": {
+      "post": {
+        "summary": "investigate_phone",
+        "description": "Investigate an Indian mobile number and return who is behind it \u2014 name(s), addresses, alternate phone numbers, and social/digital footprint. Use depth='basic' for a fast identity bundle (default) or depth='full' for a comprehensive multi-source investigation (slower). Best for: 'who owns this number', caller ID, KYC, skip-tracing.",
+        "operationId": "investigate_phone",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "depth": {
+                    "type": "string",
+                    "description": "basic = fast identity bundle (default); full = comprehensive investigation (slower)."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/find_contacts": {
+      "post": {
+        "summary": "find_contacts",
+        "description": "Skip-trace an Indian mobile number for the person's ALTERNATE phone numbers and current, geocoded addresses. Requires the end user's consent: ask the user to open the consent link in portal.outris.com/mcp and pass the consent_token they receive. Best for: debt collection, locating a person. Never fabricate consent.",
+        "operationId": "find_contacts",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  },
+                  "consent_token": {
+                    "type": "string",
+                    "description": "Server-issued consent token from portal.outris.com/mcp (preferred)."
+                  },
+                  "consent": {
+                    "type": "string",
+                    "description": "Deprecated legacy consent flag ('Y'); accepted only during migration."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/lookup_vehicle": {
+      "post": {
+        "summary": "lookup_vehicle",
+        "description": "Look up an Indian vehicle by its RC (registration) number \u2014 returns make/model, registration details, and the registered owner. Best for: vehicle verification, RC checks.",
+        "operationId": "lookup_vehicle",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "rc_number": {
+                    "type": "string",
+                    "description": "Vehicle registration number (e.g. MH12AB1234)."
+                  }
+                },
+                "required": [
+                  "rc_number"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/verify_bank_account": {
+      "post": {
+        "summary": "verify_bank_account",
+        "description": "Validate an Indian bank account WITHOUT moving any money (no-debit NPCI validation) and return whether it is valid plus the account holder's name for matching. Best for: payout/beneficiary verification. This does NOT transfer funds.",
+        "operationId": "verify_bank_account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "account_number": {
+                    "type": "string",
+                    "description": "Bank account number to validate."
+                  },
+                  "ifsc": {
+                    "type": "string",
+                    "description": "IFSC code of the account's branch."
+                  }
+                },
+                "required": [
+                  "account_number",
+                  "ifsc"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/run_collections_intelligence": {
+      "post": {
+        "summary": "run_collections_intelligence",
+        "description": "Comprehensive phone intelligence bundle tailored for debt-collection and skip-trace operations. Amalgamates multiple sources to provide a unified asset, contact, and lifestyle profile.",
+        "operationId": "run_collections_intelligence",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    },
+    "/api/vertex-agent/check_caller_id": {
+      "post": {
+        "summary": "check_caller_id",
+        "description": "Aggregate a phone number's caller-identity across multiple consumer caller-ID apps. Returns saved-as names, associated emails, and social handles. Requires DPDPA consent.",
+        "operationId": "check_caller_id",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "phone": {
+                    "type": "string",
+                    "description": "Indian mobile number (10-digit, with or without +91)."
+                  }
+                },
+                "required": [
+                  "phone"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful operation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input arguments"
+          },
+          "401": {
+            "description": "Authentication failure"
+          },
+          "402": {
+            "description": "Insufficient credits"
+          },
+          "502": {
+            "description": "Upstream provider error"
+          }
+        }
+      }
+    }
+  },
+  "components": {}
+}
