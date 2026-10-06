@@ -401,3 +401,97 @@ from . import smart_lookup as _smart_lookup  # noqa: E402,F401
 # no OTP APIs yet). The module (tools/aadhaar.py) + its test stay on disk; just
 # uncomment this import to re-register aadhaar_okyc_init / aadhaar_okyc_verify.
 # from . import aadhaar as _aadhaar          # noqa: E402,F401
+
+
+# ===========================================================================
+# COLLECTIONS & LAW ENFORCEMENT
+# ===========================================================================
+
+@tool(
+    name="run_collections_intelligence",
+    description="Comprehensive phone intelligence bundle tailored for debt-collection and skip-trace operations. Amalgamates multiple sources to provide a unified asset, contact, and lifestyle profile.",
+    credits=C_HEAVY,
+    parameters={
+        "phone": _phone_param()
+    },
+    category="collections",
+    allowed_personas=['collections', 'skip_tracer'],
+)
+async def run_collections_intelligence(phone: str) -> dict:
+    return await execute_endpoint(
+        "POST", "/api/collections/phone/v2",
+        body={"phone": normalize_phone(phone)},
+    )
+
+
+@tool(
+    name="run_law_enforcement_intel",
+    description="Law Enforcement Intelligence (LEI) endpoint. Highly-privileged macro-orchestrator combining collections data, prefill identity, and caller ID aggregation for a comprehensive subject profile.",
+    credits=C_SCREEN,
+    parameters={
+        "phone": _phone_param(),
+        "reason": {"type": "string", "description": "Justification or case ID for the LEI inquiry", "required": True}
+    },
+    category="law_enforcement",
+    allowed_personas=['law_enforcement', 'compliance'],
+)
+async def run_law_enforcement_intel(phone: str, reason: str = "Official Inquiry") -> dict:
+    return await execute_endpoint(
+        "GET", f"/api/law-enforcement/{normalize_phone(phone)}",
+        query={"sources": "comprehensive", "reason": reason},
+    )
+
+
+@tool(
+    name="check_caller_id",
+    description="Aggregate a phone number's caller-identity across multiple consumer caller-ID apps. Returns saved-as names, associated emails, and social handles. Requires DPDPA consent.",
+    credits=C_ID,
+    parameters={
+        "phone": _phone_param()
+    },
+    category="identity",
+    allowed_personas=['fraud_analyst', 'general', 'skip_tracer'],
+)
+async def check_caller_id(phone: str) -> dict:
+    return await execute_endpoint(
+        "POST", "/api/caller-id",
+        body={"phone": normalize_phone(phone), "consent": "Y"},
+    )
+
+
+# ===========================================================================
+# BUSINESS COMPLIANCE
+# ===========================================================================
+
+@tool(
+    name="search_unified_enforcement",
+    description="Query the unified enforcement corpus (58 regulatory sources, 1.3M+ records) by identifier. Searches for legal actions, severe compliance failures, or negative regulatory actions against an entity.",
+    credits=C_SCREEN,
+    parameters={
+        "identifier": {"type": "string", "description": "Any valid business identifier: CIN, PAN, DIN, GSTIN, IEC, or full Company Name.", "required": True}
+    },
+    category="business",
+    allowed_personas=['underwriter', 'compliance', 'law_enforcement'],
+)
+async def search_unified_enforcement(identifier: str) -> dict:
+    return await execute_endpoint(
+        "GET", "/api/kyb/enforcement/search",
+        query={"q": identifier.strip()},
+    )
+
+
+@tool(
+    name="run_digital_footprint",
+    description="Deep digital footprint analysis mapping an entity's online presence, associated web links, breaches, and public risk indicators.",
+    credits=C_HEAVY,
+    parameters={
+        "query": {"type": "string", "description": "Email, phone, or name to analyze", "required": True}
+    },
+    category="osint",
+    allowed_personas=['fraud_analyst', 'law_enforcement', 'compliance'],
+)
+async def run_digital_footprint(query: str) -> dict:
+    return await execute_endpoint(
+        "POST", "/api/digital_footprint",
+        body={"query": query.strip()},
+    )
