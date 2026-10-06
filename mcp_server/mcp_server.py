@@ -105,8 +105,14 @@ class OutrisMCPServer:
 
                 return tools
 
-            # Authenticated - return all enabled tools
+            # Authenticated - return enabled tools matching the user's persona
+            user_persona = self.current_account.persona if hasattr(self.current_account, "persona") else "general"
+            
             for name, tool_def in ToolRegistry.get_enabled().items():
+                # Filter by persona if the tool defines allowed_personas
+                if tool_def.allowed_personas and user_persona not in tool_def.allowed_personas:
+                    continue
+                    
                 tools.append(Tool(
                     name=name,
                     description=tool_def.description,

@@ -41,6 +41,7 @@ def _phone_param(desc="Indian mobile number (10-digit, with or without +91)."):
 # ===========================================================================
 @tool(
     name="investigate_phone",
+    allowed_personas=['general', 'fraud_analyst', 'skip_tracer'],
     description=(
         "Investigate an Indian mobile number and return who is behind it — "
         "name(s), addresses, alternate phone numbers, and social/digital "
@@ -70,6 +71,7 @@ async def investigate_phone(phone: str, depth: str = "basic") -> dict:
 
 @tool(
     name="assess_fraud_risk",
+    allowed_personas=['fraud_analyst'],
     description=(
         "Assess the fraud risk of an Indian mobile number. Returns a composite "
         "risk profile: SIM age / age-on-network, number revocation status, "
@@ -97,6 +99,7 @@ async def assess_fraud_risk(phone: str, detailed: bool = False) -> dict:
 
 @tool(
     name="find_contacts",
+    allowed_personas=['skip_tracer', 'collections'],
     description=(
         "Skip-trace an Indian mobile number for the person's ALTERNATE phone "
         "numbers and current, geocoded addresses. Requires the end user's "
@@ -157,6 +160,7 @@ async def _run_dd_job(job_id, subject, consent_token, consent, cr_id):
 
 @tool(
     name="due_diligence_person_start",
+    allowed_personas=['general', 'compliance'],
     description=(
         "Start a full due-diligence / background check on a PERSON, anchored on "
         "their mobile number (optionally add name, PAN, DOB, email, city). Covers "
@@ -224,6 +228,7 @@ async def due_diligence_person_start(
 
 @tool(
     name="check_job",
+    allowed_personas=['underwriter', 'general'],
     description=(
         "Check the status/result of an async job by job_id (e.g. from "
         "due_diligence_person_start). Free to poll — wait ~10s between polls.\n\n"
@@ -262,6 +267,7 @@ async def check_job(job_id: str) -> dict:
 # ===========================================================================
 @tool(
     name="investigate_email",
+    allowed_personas=['general', 'fraud_analyst', 'skip_tracer'],
     description=(
         "Trace the person behind an email address — linked names, phone "
         "numbers, addresses, and known data breaches. Best for: reverse email "
@@ -283,6 +289,7 @@ async def investigate_email(email: str) -> dict:
 # ===========================================================================
 @tool(
     name="resolve_company",
+    allowed_personas=['underwriter', 'general', 'compliance'],
     description=(
         "Resolve an Indian company from its NAME and return its CIN "
         "(Corporate Identification Number) plus any GSTIN / MSME registrations "
@@ -303,6 +310,7 @@ async def resolve_company(company_name: str) -> dict:
 
 @tool(
     name="lookup_gst",
+    allowed_personas=['underwriter', 'compliance', 'collections'],
     description=(
         "Look up GST registration details for a business by its GSTIN "
         "(15-character GST number). Returns legal/trade name, status, "
@@ -324,6 +332,7 @@ async def lookup_gst(gstin: str) -> dict:
 # ===========================================================================
 @tool(
     name="verify_pan",
+    allowed_personas=['general', 'compliance', 'underwriter'],
     description=(
         "Verify an Indian PAN (Permanent Account Number) and return the "
         "holder's name, status, and PAN type (individual / company / etc.). "
@@ -343,6 +352,7 @@ async def verify_pan(pan: str) -> dict:
 
 @tool(
     name="lookup_vehicle",
+    allowed_personas=['skip_tracer', 'collections', 'general'],
     description=(
         "Look up an Indian vehicle by its RC (registration) number — returns "
         "make/model, registration details, and the registered owner. Best for: "
@@ -362,6 +372,7 @@ async def lookup_vehicle(rc_number: str) -> dict:
 
 @tool(
     name="verify_bank_account",
+    allowed_personas=['general', 'underwriter', 'collections'],
     description=(
         "Validate an Indian bank account WITHOUT moving any money (no-debit "
         "NPCI validation) and return whether it is valid plus the account "

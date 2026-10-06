@@ -107,7 +107,8 @@ def tool(
     credits: int,
     parameters: dict = None,
     category: str = "general",
-    enabled: bool = True
+    enabled: bool = True,
+    allowed_personas: Optional[list[str]] = None
 ) -> Callable:
     """
     Decorator to register a function as an MCP tool.
@@ -124,7 +125,7 @@ def tool(
         async def verify_pan(pan: str) -> dict:
             ...
     """
-    return ToolRegistry.register(name, description, credits, parameters, category, enabled)
+    return ToolRegistry.register(name, description, credits, parameters, category, enabled, allowed_personas)
 
 
 def get_all_tools() -> dict[str, ToolDefinition]:
