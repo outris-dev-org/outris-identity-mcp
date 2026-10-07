@@ -174,6 +174,7 @@ async def list_tools(stack: str | None = None, persona: str | None = None):
             "description": tool_def.description,
             "credits": tool_def.credits,
             "category": tool_def.category,
+            "parameters": tool_def.parameters,
             "requires_auth": name not in ["platform_check", "check_whatsapp"]
         }
     return {
