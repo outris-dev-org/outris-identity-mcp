@@ -176,8 +176,28 @@ async def record_tool_result(
     if is_backend_error:
         # Refund the credits by setting credits_charged to 0
         # We need to also refund to the account balance
-        await _refund_credits_for_backend_error(request_id)
-        credits_charged = 0
+        #
+        # Isolated: the refund is atomic and idempotent on its own (it clears
+        # credits_charged inside its transaction), so a failure here is safe to
+        # retry and must NOT lose the result record. Letting it propagate
+        # skipped the UPDATE below entirely, so the call's success/error_code
+        # and latency were never written -- we would have lost the observability
+        # for exactly the backend errors we are trying to study.
+        try:
+            await _refund_credits_for_backend_error(request_id)
+            credits_charged = 0
+        except Exception as exc:  # noqa: BLE001 — never lose the result row
+            logger.error(
+                "credit refund failed for request=%s (%s: %s); charge left "
+                "outstanding and retryable, recording the result anyway",
+                request_id, type(exc).__name__, exc,
+            )
+            # Deliberately NOT 0. The refund reads credits_charged as "still
+            # owed" and returns early when it is zero, so zeroing it after a
+            # FAILED refund would destroy the only marker that money is owed
+            # and make every retry a silent no-op. Leaving it set keeps the
+            # refund retryable; the result row below is still written.
+            credits_charged = None
     else:
         # Keep original credits_charged (set during deduct_credits)
         credits_charged = None  # Don't update, keep original
