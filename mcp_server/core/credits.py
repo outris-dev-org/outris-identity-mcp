@@ -244,66 +244,32 @@ async def _refund_credits_for_backend_error(request_id: str) -> None:
         # still marked is_backend_error by record_tool_result (observability).
         return
 
-    # Get the tool call details
-    row = await Database.fetchrow(
-        """
-        SELECT user_account_id, credits_cost, credits_charged
-        FROM mcp.user_tool_calls
-        WHERE request_id = $1
-        """,
-        uuid.UUID(request_id)
-    )
-    
-    if not row or row["credits_charged"] == 0:
-        # Already refunded or no credits to refund
-        return
-    
-    account_id = row["user_account_id"]
-    refund_amount = row["credits_cost"]
-    
-    if account_id and refund_amount > 0:
-        # Refund credits to account
-        async with Database.transaction() as conn:
-            await conn.execute(
-                """
-                UPDATE mcp.user_accounts
-                SET 
-                    credits_balance = credits_balance + $1,
-                    total_credits_used = total_credits_used - $1,
-                    updated_at = NOW()
-                WHERE id = $2
-                """,
-                refund_amount,
-                account_id
-            )
-            
-            # Log the refund transaction
-            await conn.execute(
-                """
-                INSERT INTO mcp.user_credit_transactions (
-                    user_account_id,
-                    transaction_type,
-                    amount,
-                    balance_before,
-                    balance_after,
-                    reference_type,
-                    reference_id,
-                    description,
-                    created_at
-                ) VALUES ($1, $2, $3, 
-                    (SELECT credits_balance - $3 FROM mcp.user_accounts WHERE id = $1),
-                    (SELECT credits_balance FROM mcp.user_accounts WHERE id = $1),
-                    $4, $5, $6, NOW())
-                """,
-                account_id,
-                "refund",
-                refund_amount,  # Positive = credit added back
-                "tool_call",
-                request_id,
-                "Backend error - credits refunded"
-            )
-        
-        logger.info(f"Refunded {refund_amount} credits for backend error (request={request_id})")
+    # Lock the charge in the same transaction as the balance, refund entry and
+    # refunded marker. Concurrent/repeated callbacks must observe zero afterward.
+    async with Database.transaction() as conn:
+        row = await conn.fetchrow(
+            """SELECT user_account_id, credits_charged FROM mcp.user_tool_calls
+               WHERE request_id=$1 FOR UPDATE""", uuid.UUID(request_id))
+        if not row or not row['credits_charged'] or row['credits_charged'] <= 0:
+            return
+        account_id = row['user_account_id']
+        refund_amount = row['credits_charged']
+        account = await conn.fetchrow(
+            """UPDATE mcp.user_accounts SET credits_balance=credits_balance+$1,
+                   total_credits_used=total_credits_used-$1, updated_at=NOW()
+               WHERE id=$2 RETURNING credits_balance""", refund_amount, account_id)
+        if account is None:
+            raise ValueError('Cannot refund a charge whose account is missing')
+        balance_after = account['credits_balance']
+        await conn.execute(
+            """INSERT INTO mcp.user_credit_transactions (
+                 user_account_id, transaction_type, amount, balance_before,
+                 balance_after, reference_type, reference_id, description, created_at)
+               VALUES($1,'refund',$2,$3,$4,'tool_call',$5,'Backend error - credits refunded',NOW())""",
+            account_id, refund_amount, balance_after-refund_amount, balance_after, request_id)
+        await conn.execute(
+            'UPDATE mcp.user_tool_calls SET credits_charged=0 WHERE request_id=$1', uuid.UUID(request_id))
+    logger.info('Refunded %s credits for backend error (request=%s)', refund_amount, request_id)
 
 
 async def get_balance(account_id: int) -> int:
