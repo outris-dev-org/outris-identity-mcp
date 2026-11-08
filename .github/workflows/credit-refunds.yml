@@ -1,0 +1,27 @@
+name: Credit refund atomicity
+on:
+  pull_request:
+    paths: ['mcp_server/core/credits.py', 'tests/test_credit_refund_atomicity.py', '.github/workflows/credit-refunds.yml']
+permissions:
+  contents: read
+jobs:
+  refunds:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: local-test-only
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_MCP_PG_DSN: postgresql://postgres:local-test-only@127.0.0.1:5432/postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install -r requirements.txt pytest pytest-asyncio
+      - run: python -m pytest -q tests/test_credit_refund_atomicity.py
