@@ -24,7 +24,9 @@ router = APIRouter(prefix="/api/public", tags=["Public"])
 
 # Rate limiting configuration
 DAILY_LIMIT = 3
-# Canonical demo tool names (must match registered @tool handlers + portal).
+# Canonical demo tool names for anonymous POST /api/public/try-tool.
+# Signed-in playground runs go to POST /api/mcp/run-tool and are not limited
+# to this list. get_email and the other investigation tools live there.
 ALLOWED_TOOLS = [
     "get_name",
     "check_online_platforms",
