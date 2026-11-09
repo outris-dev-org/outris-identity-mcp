@@ -1,0 +1,89 @@
+---
+description: >-
+  Write GitHub PRs in the crypto Overview/Problem/Solution format.
+  Never use ## Summary / ## Test plan. Never add Cursor or AI footers.
+alwaysApply: true
+---
+
+# Pull request write-up
+
+This **overrides** the generic `## Summary` / `## Test plan` PR body. Every Outris GitHub PR (crypto, TraceFlow, StatementFlow, number-lookup, identity-mcp, and siblings) uses the crypto format.
+
+When opening or editing a PR (`gh pr create`, `gh pr edit`, GitHub UI), fill this shape. If `.github/PULL_REQUEST_TEMPLATE.md` exists in the repo, use it verbatim.
+
+## Title (`gh pr create --title`)
+
+`type(scope): imperative summary`
+
+Types: `feat` | `fix` | `docs` | `refactor` | `ci` | `ops` | `test` | `chore`
+
+Example: `fix(workbench): expand transfers lean so txs return before proxy drop`
+
+## Required body sections
+
+Write in plain engineering English. Overview is 1–3 sentences. Say what was done, why, and how to verify — not a changelog dump.
+
+1. **Overview** — what this PR delivers
+2. **Problem** — what was broken, missing, or inconsistent; user/system impact first
+3. **Solution** — the approach taken, not a file list
+4. **Key Changes** — concrete bullets (behavior, contracts, names); group by subsystem when large
+5. **Validation / Testing** — checked = already run; unchecked = still required after review or deploy. Quote the exact command and result
+6. **Risks / Compatibility** — what this can break, what stays compatible, intentional trade-offs
+7. **Reviewer Notes** — where to look first; call out boundaries a diff will hide
+
+Optional — keep only when they add information; delete otherwise:
+
+- **Technical Details / Data Flow**
+- **Deployment / Migration Notes** (schema, env, flags, post-deploy checks, or `None.`)
+
+## Hard bans
+
+Do **not** use:
+
+- `## Summary`
+- `## Test plan` as a top-level heading (put checks under **Validation / Testing**)
+- Authorship, generator, or tooling footers of any kind, including:
+  - `Made with [Cursor](https://cursor.com)`
+  - `Co-Authored-By: Cursor` / Claude / Copilot / Anthropic
+  - robot emoji or “Generated with …” lines
+  - links to `cursor.com`, `claude.com`, `anthropic.com`, or AI tooling repos
+
+End the body on the last content section. No footer.
+
+## Example (abridged)
+
+```markdown
+## Overview
+
+Wallet `chain` on Fusion canvas now survives a second Instagram promote / intake persist. Previously a later upsert wiped `TRX` and the node looked chainless after refresh.
+
+## Problem
+
+`case_entities` upsert replaced `attribution` on conflict. The first write often lacked chain; a later promote could not stamp `chain: TRX` onto the existing row.
+
+## Solution
+
+Merge `attribution` JSON on conflict and prefer artifact rows that already have a non-null chain when promoting.
+
+## Key Changes
+
+- `case_entities` upsert merges `attribution` instead of replacing it
+- Instagram promote uses `DISTINCT ON` to keep the chained wallet row
+
+## Validation / Testing
+
+- [x] `pytest tests/test_case_graph_repository.py` — includes `test_wallet_attribution_chain_merges_on_conflict`
+- [ ] Promote an IG profile with a TRX wallet twice — `GET /canvas/{id}/graph` keeps `chain: TRX` after refresh
+
+## Deployment / Migration Notes
+
+None. No schema or env changes.
+
+## Risks / Compatibility
+
+Existing rows without chain are unchanged until the next promote/intake write.
+
+## Reviewer Notes
+
+Start at the upsert merge in the case-graph repository. Product behavior is not in the Instagram OCR path.
+```
